@@ -53,3 +53,19 @@ Keystores and passwords are created in the git-ignored `keystores/` folder - bac
 ```bash
 npm run build:users   # or build:admin / build:all
 ```
+
+## Status against the original brief
+
+**Built:** custom (non-Material) theme + SVG icon set, live catalog from Realtime Database, customer app with
+age gate, cart, checkout, COD, UPI deep links + QR + "I have paid", live order tracking; admin app with login,
+live orders (sound/vibration alert while the app is open), status changes, UPI verification, product /
+stock / banner / store-settings editing; hardened database rules; GitHub Actions build + Gofile upload.
+
+**Not built yet:**
+- Phone OTP login for customers (customers are signed in anonymously for now; no saved profile or address book)
+- Admin push notifications when the app is closed (needs FCM device registration + a Cloud Function on the Blaze plan);
+  today the admin alert only works while the app is open
+- Admin dashboard charts, customers list, categories manager, bulk edit, "My devices" screen
+- Image upload with compression (product images are URLs), product detail page / filters / sorting
+- Release minify + resource shrinking (left off so the untested build cannot break at runtime)
+- Server-side order total check (needs a Cloud Function; see `firebase/SETUP.md`)

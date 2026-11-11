@@ -43,9 +43,11 @@ import {
   AnimatedShield,
   AnimatedSparkle,
   getCategoryEmoji,
+  DEFAULT_SETTINGS,
 } from '@lucky/shared';
 
 import UpiPaymentPanel from './UpiPaymentPanel';
+import AgeGate, { readAgeConfirmed } from './AgeGate';
 
 const SEED_DRINKS: Product[] = [
   {
@@ -1943,9 +1945,14 @@ function HyperMartStorefront() {
 }
 
 export default function App() {
+  const [ageConfirmed, setAgeConfirmed] = useState(readAgeConfirmed);
   return (
     <ToastProvider>
-      <HyperMartStorefront />
+      {ageConfirmed ? (
+        <HyperMartStorefront />
+      ) : (
+        <AgeGate notice={DEFAULT_SETTINGS.minAgeNotice} onConfirm={() => setAgeConfirmed(true)} />
+      )}
     </ToastProvider>
   );
 }

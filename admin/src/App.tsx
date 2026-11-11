@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Haptics } from '@capacitor/haptics';
 import {
   ToastProvider,
   useToast,
@@ -41,11 +42,38 @@ import {
   AnimatedSparkle,
 } from '@lucky/shared';
 
+/** Three short beeps. Best effort: some WebViews block audio until the user has tapped the screen. */
+function playNewOrderSound() {
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (Ctx) {
+      const ctx = new Ctx();
+      [0, 0.28, 0.56].forEach((offset, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = i === 2 ? 1175 : 880;
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime + offset);
+        gain.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + offset + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.22);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(ctx.currentTime + offset);
+        osc.stop(ctx.currentTime + offset + 0.24);
+      });
+      setTimeout(() => void ctx.close(), 1200);
+    }
+  } catch {
+    /* audio unavailable */
+  }
+  Haptics.vibrate({ duration: 400 }).catch(() => {});
+}
+
 type AdminNavTab = 'orders' | 'products' | 'analytics' | 'settings';
 
 function HyperMartAdmin() {
   const { showToast } = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
+  const seenOrderIds = useRef<Set<string> | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [activeTab, setActiveTab] = useState<AdminNavTab>('orders');
   const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'active' | 'delivered'>('all');
@@ -94,7 +122,26 @@ function HyperMartAdmin() {
   // Realtime subscription for incoming orders
   useEffect(() => {
     const unsub = subscribeToOrders((liveOrders) => {
-      setOrders(liveOrders ?? []);
+      const list = liveOrders ?? [];
+      setOrders(list);
+      // The first snapshot is the existing backlog; only orders that arrive afterwards raise an alert
+      if (seenOrderIds.current === null) {
+        seenOrderIds.current = new Set(list.map((o) => o.id));
+        return;
+      }
+      const seen = seenOrderIds.current;
+      const fresh = list.filter((o) => !seen.has(o.id));
+      fresh.forEach((o) => seen.add(o.id));
+      if (fresh.length > 0) {
+        playNewOrderSound();
+        const o = fresh[0];
+        showToast(
+          fresh.length === 1
+            ? `New order #${o.id} - ₹${o.total.toLocaleString('en-IN')}`
+            : `${fresh.length} new orders`,
+          'success'
+        );
+      }
     });
     return () => unsub();
   }, []);

@@ -66,6 +66,6 @@ stock / banner / store-settings editing; hardened database rules; GitHub Actions
 - Admin push notifications when the app is closed (needs FCM device registration + a Cloud Function on the Blaze plan);
   today the admin alert only works while the app is open
 - Admin dashboard charts, customers list, categories manager, bulk edit, "My devices" screen
-- Image upload with compression (product images are URLs), product detail page / filters / sorting
+- Image upload with compression (product images are URLs); brand, price-range and size filters (category filter and sorting exist)
 - Release minify + resource shrinking (left off so the untested build cannot break at runtime)
 - Server-side order total check (needs a Cloud Function; see `firebase/SETUP.md`)

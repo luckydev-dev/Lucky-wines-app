@@ -24,3 +24,7 @@ node_modules/
 dist/
 build/
 .capacitor/
+
+# Built APKs come from the GitHub workflow / Gofile, not git
+build-apks/
+dist-apks/

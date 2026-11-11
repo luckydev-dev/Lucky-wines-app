@@ -157,7 +157,7 @@
         },
         "paymentStatus": {
           ".validate": "newData.val() === 'pending' || newData.val() === 'awaiting_verification' || newData.val() === 'payment_submitted' || newData.val() === 'paid' || newData.val() === 'failed'",
-          ".write": "auth != null && data.parent().child('userId').val() === auth.uid && data.val() === 'awaiting_verification' && newData.val() === 'payment_submitted'"
+          ".write": "auth != null && data.parent().child('userId').val() === auth.uid && (data.val() === 'awaiting_verification' || data.val() === 'failed') && newData.val() === 'payment_submitted'"
         },
         "status": {
           ".validate": "newData.val() === 'placed' || newData.val() === 'confirmed' || newData.val() === 'packed' || newData.val() === 'out_for_delivery' || newData.val() === 'delivered' || newData.val() === 'cancelled'",
@@ -165,7 +165,7 @@
         },
         "utr": {
           ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9]{6,30}$/)",
-          ".write": "auth != null && data.parent().child('userId').val() === auth.uid && data.parent().child('paymentMethod').val() === 'upi' && data.parent().child('paymentStatus').val() === 'awaiting_verification'"
+          ".write": "auth != null && data.parent().child('userId').val() === auth.uid && data.parent().child('paymentMethod').val() === 'upi' && (data.parent().child('paymentStatus').val() === 'awaiting_verification' || data.parent().child('paymentStatus').val() === 'failed')"
         },
         "createdAt": {
           ".validate": "newData.isNumber()"

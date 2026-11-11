@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { App as CapApp } from '@capacitor/app';
 import {
   ToastProvider,
   useToast,
@@ -46,6 +47,7 @@ import {
   getCategoryEmoji,
 } from '@lucky/shared';
 import { UpiPaymentSheet } from './UpiPaymentSheet';
+import { LaunchGate, OfflineBanner } from './Launch';
 
 const SEED_DRINKS: Product[] = [
   {
@@ -260,6 +262,55 @@ function HyperMartStorefront() {
   // Active Tracked Order
   const [activeTrackingOrderId, setActiveTrackingOrderId] = useState<string | null>(null);
   const [trackedOrder, setTrackedOrder] = useState<Order | null>(null);
+
+  // Android back button: close the topmost screen first, go Home next, and only then leave the app.
+  const backHandlerRef = useRef<() => boolean>(() => false);
+  backHandlerRef.current = () => {
+    if (paymentOrder) {
+      setActiveTrackingOrderId(paymentOrder.id);
+      setPaymentOrder(null);
+      return true;
+    }
+    if (activeTrackingOrderId) {
+      setActiveTrackingOrderId(null);
+      return true;
+    }
+    if (isCheckoutOpen) {
+      setIsCheckoutOpen(false);
+      return true;
+    }
+    if (selectedProduct) {
+      setSelectedProduct(null);
+      return true;
+    }
+    if (isCartOpen) {
+      setIsCartOpen(false);
+      return true;
+    }
+    if (activeTab !== 'home') {
+      setActiveTab('home');
+      return true;
+    }
+    return false;
+  };
+  useEffect(() => {
+    let handle: { remove: () => Promise<void> } | undefined;
+    let disposed = false;
+    CapApp.addListener('backButton', () => {
+      if (!backHandlerRef.current()) {
+        CapApp.exitApp().catch(() => {});
+      }
+    })
+      .then((h) => {
+        if (disposed) h.remove();
+        else handle = h;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      handle?.remove().catch(() => {});
+    };
+  }, []);
 
   // Live Realtime Database Subscriptions (Instantly syncs edits from Admin)
   useEffect(() => {
@@ -1998,6 +2049,8 @@ export default function App() {
   return (
     <ToastProvider>
       <HyperMartStorefront />
+      <OfflineBanner />
+      <LaunchGate />
     </ToastProvider>
   );
 }

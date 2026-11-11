@@ -1,0 +1,174 @@
+import React, { useEffect, useState } from 'react';
+import { AnimatedBottle, DEFAULT_SETTINGS, subscribeToStoreSettings } from '@lucky/shared';
+
+const AGE_KEY = 'lucky_age_confirmed_v1';
+
+const readConfirmed = (): boolean => {
+  try {
+    return localStorage.getItem(AGE_KEY) === 'yes';
+  } catch {
+    return false;
+  }
+};
+
+const rememberConfirmed = () => {
+  try {
+    localStorage.setItem(AGE_KEY, 'yes');
+  } catch {
+    /* storage can be unavailable - the gate simply shows again next launch */
+  }
+};
+
+const overlay: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 20000,
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '24px',
+  boxSizing: 'border-box',
+  backgroundColor: '#FFFFFF',
+};
+
+/** Animated-logo splash, then a first-launch legal-age confirmation. The answer is remembered on the device. */
+export const LaunchGate: React.FC = () => {
+  const [splash, setSplash] = useState(true);
+  const [confirmed, setConfirmed] = useState(readConfirmed);
+  const [declined, setDeclined] = useState(false);
+  const [notice, setNotice] = useState(DEFAULT_SETTINGS.minAgeNotice);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setSplash(false), 1400);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  // The shop owner can change this wording in the admin app to match local law
+  useEffect(() => {
+    const unsub = subscribeToStoreSettings((s) => {
+      if (s?.minAgeNotice) setNotice(s.minAgeNotice);
+    });
+    return () => unsub();
+  }, []);
+
+  if (splash) {
+    return (
+      <div style={overlay} role="status" aria-label="Loading Lucky Wine">
+        <AnimatedBottle size={64} color="#4AB7B6" glow />
+        <div style={{ marginTop: '14px', fontSize: '24px', fontWeight: 800, color: '#4AB7B6', fontFamily: "'Poppins', sans-serif" }}>
+          Lucky<span style={{ color: '#FDAA5D' }}>Wine</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (confirmed) return null;
+
+  if (declined) {
+    return (
+      <div style={overlay}>
+        <div style={{ maxWidth: '320px', textAlign: 'center' }}>
+          <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#1E293B', margin: '0 0 8px' }}>Sorry, we cannot let you in</h1>
+          <p style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.5, margin: '0 0 16px' }}>
+            Alcohol can only be sold to people of legal drinking age. Please come back when you are old enough.
+          </p>
+          <button
+            onClick={() => setDeclined(false)}
+            style={{ background: 'none', border: 'none', color: '#4AB7B6', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+          >
+            Go back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={overlay} role="dialog" aria-modal="true" aria-labelledby="age-title">
+      <div style={{ maxWidth: '340px', width: '100%', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <AnimatedBottle size={44} color="#4AB7B6" glow />
+        </div>
+        <h1 id="age-title" style={{ fontSize: '22px', fontWeight: 800, color: '#1E293B', margin: 0 }}>
+          Are you of legal drinking age?
+        </h1>
+        <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.5, margin: 0 }}>{notice}</p>
+        <button
+          onClick={() => {
+            rememberConfirmed();
+            setConfirmed(true);
+          }}
+          style={{
+            padding: '14px',
+            borderRadius: '14px',
+            border: 'none',
+            backgroundColor: '#4AB7B6',
+            color: '#FFFFFF',
+            fontSize: '14px',
+            fontWeight: 800,
+            cursor: 'pointer',
+          }}
+        >
+          Yes, I am of legal age
+        </button>
+        <button
+          onClick={() => setDeclined(true)}
+          style={{
+            padding: '12px',
+            borderRadius: '14px',
+            border: '1.5px solid #E2E8F0',
+            backgroundColor: '#FFFFFF',
+            color: '#64748B',
+            fontSize: '13px',
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          No
+        </button>
+        <p style={{ fontSize: '11px', color: '#94A3B8', lineHeight: 1.5, margin: 0 }}>
+          Please drink responsibly. Never drink and drive. Government photo ID may be checked on delivery.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+/** Slim banner shown while the phone has no internet connection. */
+export const OfflineBanner: React.FC = () => {
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+
+  useEffect(() => {
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener('online', up);
+    window.addEventListener('offline', down);
+    return () => {
+      window.removeEventListener('online', up);
+      window.removeEventListener('offline', down);
+    };
+  }, []);
+
+  if (online) return null;
+  return (
+    <div
+      role="status"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 19999,
+        padding: 'max(env(safe-area-inset-top, 0px), 6px) 12px 6px',
+        backgroundColor: '#1E293B',
+        color: '#FFFFFF',
+        fontSize: '12px',
+        fontWeight: 700,
+        textAlign: 'center',
+      }}
+    >
+      You are offline. Showing saved items - orders need internet.
+    </div>
+  );
+};

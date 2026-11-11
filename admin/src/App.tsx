@@ -11,7 +11,10 @@ import {
   subscribeToOrders,
   updateOrderStatusInRTDB,
   updateOrderPaymentStatusInRTDB,
-  fetchProductsList,
+  subscribeToProducts,
+  adminSignIn,
+  adminSignOut,
+  subscribeToAdminSession,
   updateProductInRTDB,
   addProductToRTDB,
   deleteProductFromRTDB,
@@ -38,89 +41,11 @@ import {
   AnimatedSparkle,
 } from '@lucky/shared';
 
-const MOCK_ADMIN_ORDERS: Order[] = [
-  {
-    id: 'LW-8924',
-    userId: 'u1',
-    userName: 'Rahul Verma',
-    userPhone: '+91 98451 22890',
-    address: {
-      id: 'a1',
-      label: 'Home',
-      line1: 'Flat 402, Prestige Palms, BTM Layout',
-      landmark: 'Near 12th Main',
-      pincode: '560038',
-    },
-    items: [
-      {
-        productId: 'prod_1',
-        name: 'Glenfiddich 12Y Single Malt',
-        brand: 'Glenfiddich',
-        price: 5400,
-        mrp: 5900,
-        sizeMl: 750,
-        image: 'https://images.unsplash.com/photo-1527281400683-1aae777175f8?w=500',
-        quantity: 1,
-      },
-      {
-        productId: 'prod_2',
-        name: 'Corona Extra 6-Pack',
-        brand: 'Corona',
-        price: 1250,
-        mrp: 1380,
-        sizeMl: 330,
-        image: 'https://images.unsplash.com/photo-1608270546103-97992762b1b3?w=500',
-        quantity: 1,
-      },
-    ],
-    subtotal: 6650,
-    deliveryFee: 0,
-    total: 6650,
-    paymentMethod: 'upi',
-    paymentStatus: 'awaiting_verification',
-    status: 'placed',
-    createdAt: Date.now() - 1000 * 60 * 4,
-    updatedAt: Date.now(),
-  },
-  {
-    id: 'LW-8921',
-    userId: 'u2',
-    userName: 'Ananya Sharma',
-    userPhone: '+91 99002 44119',
-    address: {
-      id: 'a2',
-      label: 'Office',
-      line1: 'Villa 12, Embassy Grove',
-      pincode: '560038',
-    },
-    items: [
-      {
-        productId: 'prod_3',
-        name: 'Jacob\'s Creek Shiraz Cabernet',
-        brand: 'Jacob\'s Creek',
-        price: 1450,
-        mrp: 1600,
-        sizeMl: 750,
-        image: 'https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?w=500',
-        quantity: 2,
-      },
-    ],
-    subtotal: 2900,
-    deliveryFee: 0,
-    total: 2900,
-    paymentMethod: 'cod',
-    paymentStatus: 'pending',
-    status: 'confirmed',
-    createdAt: Date.now() - 1000 * 60 * 25,
-    updatedAt: Date.now(),
-  },
-];
-
 type AdminNavTab = 'orders' | 'products' | 'analytics' | 'settings';
 
 function HyperMartAdmin() {
   const { showToast } = useToast();
-  const [orders, setOrders] = useState<Order[]>(MOCK_ADMIN_ORDERS);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [activeTab, setActiveTab] = useState<AdminNavTab>('orders');
   const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'active' | 'delivered'>('all');
@@ -169,26 +94,22 @@ function HyperMartAdmin() {
   // Realtime subscription for incoming orders
   useEffect(() => {
     const unsub = subscribeToOrders((liveOrders) => {
-      if (liveOrders && liveOrders.length > 0) {
-        setOrders(liveOrders);
-      }
+      setOrders(liveOrders ?? []);
     });
     return () => unsub();
   }, []);
 
-  // Fetch catalog & store settings from RTDB
+  // Live catalog (edits from any device show up instantly) + store settings from RTDB
   useEffect(() => {
-    fetchProductsList().then((res) => {
-      if (res && res.length > 0) {
-        setProducts(res);
-      }
+    const unsubProducts = subscribeToProducts((liveProducts) => {
+      setProducts(liveProducts ?? []);
     });
     fetchStoreSettings().then((settings) => {
       if (settings) {
         setStoreSettings(settings);
       }
     });
-    subscribeToBanners((banners) => {
+    const unsubBanners = subscribeToBanners((banners) => {
       if (banners && banners.length > 0) {
         const b = banners[0];
         setPromoBanner({
@@ -200,37 +121,50 @@ function HyperMartAdmin() {
         });
       }
     });
+    return () => {
+      unsubProducts();
+      unsubBanners();
+    };
   }, []);
 
+  // Writes are confirmed by the live listeners; on failure we say so instead of faking success.
   const handleStatusChange = async (orderId: string, status: Order['status']) => {
+    const order = orders.find((o) => o.id === orderId);
     try {
-      await updateOrderStatusInRTDB(orderId, status);
-    } catch {}
-    setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status } : o))
-    );
-    showToast(`Order #${orderId} marked as ${status.toUpperCase().replace(/_/g, ' ')}`, 'success');
+      // A COD order counts as paid once it has been delivered
+      const extra = status === 'delivered' && order?.paymentMethod === 'cod' ? { paymentStatus: 'paid' as const } : {};
+      await updateOrderStatusInRTDB(orderId, status, extra);
+      showToast(`Order #${orderId} marked as ${status.toUpperCase().replace(/_/g, ' ')}`, 'success');
+    } catch (err) {
+      console.error('Order status update failed:', err);
+      showToast('Could not update the order. Check your connection and sign-in.', 'error');
+    }
   };
 
   const handleVerifyUPI = async (orderId: string) => {
+    const order = orders.find((o) => o.id === orderId);
     try {
-      await updateOrderPaymentStatusInRTDB(orderId, 'paid');
-    } catch {}
-    setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, paymentStatus: 'paid', status: 'confirmed' } : o))
-    );
-    showToast(`UPI payment verified for Order #${orderId}`, 'success');
+      if (order && order.status === 'placed') {
+        await updateOrderStatusInRTDB(orderId, 'confirmed', { paymentStatus: 'paid' });
+      } else {
+        await updateOrderPaymentStatusInRTDB(orderId, 'paid');
+      }
+      showToast(`UPI payment verified for Order #${orderId}`, 'success');
+    } catch (err) {
+      console.error('UPI verification failed:', err);
+      showToast('Could not verify the payment. Check your connection and sign-in.', 'error');
+    }
   };
 
   const handleToggleProductStock = async (product: Product) => {
     const updatedStock = product.stock > 0 ? 0 : 25;
     try {
       await updateProductInRTDB(product.id, { stock: updatedStock });
-    } catch {}
-    setProducts((prev) =>
-      prev.map((p) => (p.id === product.id ? { ...p, stock: updatedStock } : p))
-    );
-    showToast(`${product.name} stock set to ${updatedStock}`, 'info');
+      showToast(`${product.name} stock set to ${updatedStock}`, 'info');
+    } catch (err) {
+      console.error('Stock update failed:', err);
+      showToast('Could not update stock. Check your connection and sign-in.', 'error');
+    }
   };
 
   const openAddProductModal = () => {
@@ -290,11 +224,14 @@ function HyperMartAdmin() {
         images: [productForm.image],
         tags: productForm.tags.split(',').map((t) => t.trim()),
       };
-      await updateProductInRTDB(editingProduct.id, updates);
-      setProducts((prev) =>
-        prev.map((p) => (p.id === editingProduct.id ? { ...p, ...updates } : p))
-      );
-      showToast(`Updated ${productForm.name}`, 'success');
+      try {
+        await updateProductInRTDB(editingProduct.id, updates);
+        showToast(`Updated ${productForm.name}`, 'success');
+      } catch (err) {
+        console.error('Product update failed:', err);
+        showToast('Could not save the product. Check your connection and sign-in.', 'error');
+        return;
+      }
     } else {
       // Add new product
       const newProd: Product = {
@@ -315,27 +252,37 @@ function HyperMartAdmin() {
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
-      await addProductToRTDB(newProd);
-      setProducts((prev) => [newProd, ...prev]);
-      showToast(`Added ${newProd.name} to products!`, 'success');
+      try {
+        await addProductToRTDB(newProd);
+        showToast(`Added ${newProd.name} to products!`, 'success');
+      } catch (err) {
+        console.error('Product add failed:', err);
+        showToast('Could not add the product. Check your connection and sign-in.', 'error');
+        return;
+      }
     }
     setIsProductModalOpen(false);
   };
 
   const handleDeleteProduct = async (productId: string) => {
     if (confirm('Are you sure you want to delete this product?')) {
-      await deleteProductFromRTDB(productId);
-      setProducts((prev) => prev.filter((p) => p.id !== productId));
-      showToast('Product removed from catalog', 'info');
+      try {
+        await deleteProductFromRTDB(productId);
+        showToast('Product removed from catalog', 'info');
+      } catch (err) {
+        console.error('Product delete failed:', err);
+        showToast('Could not delete the product. Check your connection and sign-in.', 'error');
+      }
     }
   };
 
   const handleSaveStoreSettings = async () => {
     try {
       await updateStoreSettingsInRTDB(storeSettings);
-      showToast('Store settings saved to RTDB', 'success');
-    } catch {
-      showToast('Settings saved locally', 'info');
+      showToast('Store settings saved', 'success');
+    } catch (err) {
+      console.error('Settings save failed:', err);
+      showToast('Could not save settings. Check your connection and sign-in.', 'error');
     }
   };
 
@@ -348,8 +295,9 @@ function HyperMartAdmin() {
         active: promoBanner.active,
       });
       showToast('Promo banner updated on customer app!', 'success');
-    } catch {
-      showToast('Banner saved locally', 'info');
+    } catch (err) {
+      console.error('Banner save failed:', err);
+      showToast('Could not save the banner. Check your connection and sign-in.', 'error');
     }
   };
 
@@ -412,15 +360,35 @@ function HyperMartAdmin() {
           </div>
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <button
+          onClick={() => { void adminSignOut(); }}
+          aria-label="Sign out"
+          style={{
+            backgroundColor: 'transparent',
+            border: '1.5px solid #CBD5E1',
+            color: '#64748B',
+            borderRadius: '9999px',
+            padding: '6px 12px',
+            fontSize: '12px',
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          Sign out
+        </button>
         {/* Live Store Status Switch */}
         <button
           onClick={async () => {
             const next = !storeSettings.isOpen;
-            setStoreSettings((s) => ({ ...s, isOpen: next }));
             try {
               await updateStoreSettingsInRTDB({ isOpen: next });
-            } catch {}
-            showToast(next ? 'Store open & accepting orders' : 'Store paused', next ? 'success' : 'warning');
+              setStoreSettings((s) => ({ ...s, isOpen: next }));
+              showToast(next ? 'Store open & accepting orders' : 'Store paused', next ? 'success' : 'warning');
+            } catch (err) {
+              console.error('Store open/close failed:', err);
+              showToast('Could not change store status. Check your connection and sign-in.', 'error');
+            }
           }}
           style={{
             display: 'flex',
@@ -444,6 +412,7 @@ function HyperMartAdmin() {
           }} />
           <span>{storeSettings.isOpen ? 'Open' : 'Paused'}</span>
         </button>
+        </div>
       </header>
 
       {/* 2. Main Content Area */}
@@ -1314,10 +1283,143 @@ function HyperMartAdmin() {
   );
 }
 
+function AdminLogin() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await adminSignIn(email, password);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      setError(
+        msg === 'NOT_ADMIN'
+          ? 'This account is not an admin of the store.'
+          : 'Sign-in failed. Check your email and password.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const field: React.CSSProperties = {
+    width: '100%',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    border: '1px solid #CBD5E1',
+    backgroundColor: '#FFFFFF',
+    fontSize: '14px',
+    color: '#1E293B',
+    outline: 'none',
+    boxSizing: 'border-box',
+  };
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: '#F4F9F9',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '24px',
+      boxSizing: 'border-box',
+    }}>
+      <form
+        onSubmit={submit}
+        style={{
+          width: '100%',
+          maxWidth: '360px',
+          backgroundColor: '#FFFFFF',
+          borderRadius: '20px',
+          padding: '24px',
+          border: '1px solid #E8F2F2',
+          boxShadow: '0 8px 24px rgba(74, 183, 182, 0.10)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <AnimatedBottle size={28} color="#4AB7B6" glow />
+          <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#4AB7B6', margin: 0, fontFamily: "'Poppins', sans-serif" }}>
+            Lucky<span style={{ color: '#FDAA5D' }}>Admin</span>
+          </h1>
+        </div>
+        <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>Sign in to manage the store.</p>
+        <input
+          type="email"
+          autoComplete="username"
+          placeholder="Admin email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          style={field}
+        />
+        <input
+          type="password"
+          autoComplete="current-password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          style={field}
+        />
+        {error && (
+          <div role="alert" style={{ fontSize: '12px', fontWeight: 600, color: '#EA7173' }}>{error}</div>
+        )}
+        <button
+          type="submit"
+          disabled={busy}
+          style={{
+            padding: '13px',
+            borderRadius: '12px',
+            border: 'none',
+            backgroundColor: '#4AB7B6',
+            color: '#FFFFFF',
+            fontSize: '14px',
+            fontWeight: 700,
+            cursor: busy ? 'default' : 'pointer',
+            opacity: busy ? 0.7 : 1,
+          }}
+        >
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function AuthGate() {
+  const [session, setSession] = useState<'loading' | 'in' | 'out'>('loading');
+
+  useEffect(() => subscribeToAdminSession(setSession), []);
+
+  if (session === 'loading') {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#F4F9F9',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <AnimatedBottle size={40} color="#4AB7B6" glow />
+      </div>
+    );
+  }
+  return session === 'in' ? <HyperMartAdmin /> : <AdminLogin />;
+}
+
 export default function App() {
   return (
     <ToastProvider>
-      <HyperMartAdmin />
+      <AuthGate />
     </ToastProvider>
   );
 }

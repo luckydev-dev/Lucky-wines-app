@@ -12,6 +12,11 @@ echo "  Lucky Wine & Liquor - Release Build & Upload (Step: ${STEP})"
 echo "=========================================================="
 
 # 0. Ensure Keystores are restored or generated
+# Passwords for NEW keystores are random and only ever written to the git-ignored keystores/keystore.properties.
+# BACK UP the keystores/ folder - a regenerated key cannot update an installed app.
+USERS_PASS="${USERS_KEYSTORE_PASSWORD:-$(openssl rand -hex 16)}"
+ADMIN_PASS="${ADMIN_KEYSTORE_PASSWORD:-$(openssl rand -hex 16)}"
+VERSION_CODE="${VERSION_CODE:-$(( $(date +%s) / 60 ))}"   # always increasing, so new builds install over old ones
 mkdir -p "${WORKSPACE_DIR}/keystores"
 if [ ! -f "${WORKSPACE_DIR}/keystores/users-release.keystore" ]; then
     if [ -f "${WORKSPACE_DIR}/keystores/users-release.keystore.base64" ]; then
@@ -19,7 +24,7 @@ if [ ! -f "${WORKSPACE_DIR}/keystores/users-release.keystore" ]; then
         base64 -d "${WORKSPACE_DIR}/keystores/users-release.keystore.base64" > "${WORKSPACE_DIR}/keystores/users-release.keystore"
     else
         echo "Generating users-release.keystore..."
-        keytool -genkey -v -keystore "${WORKSPACE_DIR}/keystores/users-release.keystore" -alias users-release-key -keyalg RSA -keysize 2048 -validity 10000 -storepass LuckyWineUserPass2026 -keypass LuckyWineUserPass2026 -dname "CN=LuckyWine, OU=Mobile, O=LuckyWine, L=Bengaluru, ST=Karnataka, C=IN"
+        keytool -genkey -v -keystore "${WORKSPACE_DIR}/keystores/users-release.keystore" -alias users-release-key -keyalg RSA -keysize 2048 -validity 10000 -storepass "${USERS_PASS}" -keypass "${USERS_PASS}" -dname "CN=LuckyWine, OU=Mobile, O=LuckyWine, L=Bengaluru, ST=Karnataka, C=IN"
     fi
 fi
 
@@ -29,7 +34,7 @@ if [ ! -f "${WORKSPACE_DIR}/keystores/admin-release.keystore" ]; then
         base64 -d "${WORKSPACE_DIR}/keystores/admin-release.keystore.base64" > "${WORKSPACE_DIR}/keystores/admin-release.keystore"
     else
         echo "Generating admin-release.keystore..."
-        keytool -genkey -v -keystore "${WORKSPACE_DIR}/keystores/admin-release.keystore" -alias admin-release-key -keyalg RSA -keysize 2048 -validity 10000 -storepass LuckyWineAdminPass2026 -keypass LuckyWineAdminPass2026 -dname "CN=LuckyWineAdmin, OU=Mobile, O=LuckyWine, L=Bengaluru, ST=Karnataka, C=IN"
+        keytool -genkey -v -keystore "${WORKSPACE_DIR}/keystores/admin-release.keystore" -alias admin-release-key -keyalg RSA -keysize 2048 -validity 10000 -storepass "${ADMIN_PASS}" -keypass "${ADMIN_PASS}" -dname "CN=LuckyWineAdmin, OU=Mobile, O=LuckyWine, L=Bengaluru, ST=Karnataka, C=IN"
     fi
 fi
 
@@ -37,14 +42,14 @@ if [ ! -f "${WORKSPACE_DIR}/keystores/keystore.properties" ]; then
     echo "Creating keystore.properties..."
     cat <<EOF > "${WORKSPACE_DIR}/keystores/keystore.properties"
 USERS_STORE_FILE=${WORKSPACE_DIR}/keystores/users-release.keystore
-USERS_STORE_PASSWORD=LuckyWineUserPass2026
+USERS_STORE_PASSWORD=${USERS_PASS}
 USERS_KEY_ALIAS=users-release-key
-USERS_KEY_PASSWORD=LuckyWineUserPass2026
+USERS_KEY_PASSWORD=${USERS_PASS}
 
 ADMIN_STORE_FILE=${WORKSPACE_DIR}/keystores/admin-release.keystore
-ADMIN_STORE_PASSWORD=LuckyWineAdminPass2026
+ADMIN_STORE_PASSWORD=${ADMIN_PASS}
 ADMIN_KEY_ALIAS=admin-release-key
-ADMIN_KEY_PASSWORD=LuckyWineAdminPass2026
+ADMIN_KEY_PASSWORD=${ADMIN_PASS}
 EOF
 fi
 
@@ -55,8 +60,8 @@ echo "[1/4] Building web assets for Users and Admin apps..."
 
 # 2. Build Signed Release APKs
 echo "[2/4] Assembling Release APKs with Gradle..."
-(cd "${WORKSPACE_DIR}/users/android" && chmod +x ./gradlew && ./gradlew assembleRelease)
-(cd "${WORKSPACE_DIR}/admin/android" && chmod +x ./gradlew && ./gradlew assembleRelease)
+(cd "${WORKSPACE_DIR}/users/android" && chmod +x ./gradlew && ./gradlew assembleRelease -PappVersionCode="${VERSION_CODE}" -PappVersionName="${VERSION}")
+(cd "${WORKSPACE_DIR}/admin/android" && chmod +x ./gradlew && ./gradlew assembleRelease -PappVersionCode="${VERSION_CODE}" -PappVersionName="${VERSION}")
 
 USERS_SRC="${WORKSPACE_DIR}/users/android/app/build/outputs/apk/release/app-release.apk"
 ADMIN_SRC="${WORKSPACE_DIR}/admin/android/app/build/outputs/apk/release/app-release.apk"
@@ -70,45 +75,8 @@ cp "${ADMIN_SRC}" "${ADMIN_APK}"
 echo "[3/4] Release APKs created successfully:"
 ls -lh "${USERS_APK}" "${ADMIN_APK}"
 
-# 3. Upload to Gofile.io function
 upload_to_gofile() {
-    local file_path="$1"
-    local filename="$(basename "${file_path}")"
-    local max_retries=3
-    local attempt=1
-    local download_link=""
-
-    while [ $attempt -le $max_retries ]; do
-        # Fetch available server
-        local server=$(curl -s --connect-timeout 8 https://api.gofile.io/servers | python3 -c "import sys, json
-try:
-    data = json.load(sys.stdin)
-    print(data['data']['servers'][0]['name'])
-except Exception:
-    print('store1')
-" 2>/dev/null || echo "store1")
-
-        local response=$(curl -s --connect-timeout 20 -F "file=@${file_path}" "https://${server}.gofile.io/uploadFile" 2>/dev/null)
-        download_link=$(echo "${response}" | python3 -c "import sys, json
-try:
-    data = json.load(sys.stdin)
-    print(data.get('data', {}).get('downloadPage', ''))
-except Exception:
-    print('')
-" 2>/dev/null)
-
-        if [ -n "${download_link}" ]; then
-            echo "${download_link}"
-            return 0
-        fi
-
-        echo "  [Retry $attempt/$max_retries] Uploading ${filename}..." >&2
-        attempt=$((attempt + 1))
-        sleep 2
-    done
-
-    echo "FAILED"
-    return 1
+    "${WORKSPACE_DIR}/scripts/upload-gofile.sh" "$1" || echo "FAILED"
 }
 
 echo "[4/4] Uploading to Gofile.io..."

@@ -1,0 +1,170 @@
+name: Build APKs and upload to Gofile
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      label:
+        description: "Label added to the APK file names (for example step9)"
+        required: false
+        default: "ci"
+
+concurrency:
+  group: build-apks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build users + admin release APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      LABEL: ${{ github.event.inputs.label || 'ci' }}
+      USERS_KEYSTORE_BASE64: ${{ secrets.USERS_KEYSTORE_BASE64 }}
+      USERS_KEYSTORE_PASSWORD: ${{ secrets.USERS_KEYSTORE_PASSWORD }}
+      ADMIN_KEYSTORE_BASE64: ${{ secrets.ADMIN_KEYSTORE_BASE64 }}
+      ADMIN_KEYSTORE_PASSWORD: ${{ secrets.ADMIN_KEYSTORE_PASSWORD }}
+      GOFILE_TOKEN: ${{ secrets.GOFILE_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web apps
+        run: |
+          npm run build:all
+
+      - name: Prepare signing keys
+        id: keys
+        run: |
+          set -euo pipefail
+          mkdir -p keystores
+          temporary=false
+
+          make_key() {
+            local name="$1" alias="$2" b64="$3" pass="$4"
+            local file="keystores/${name}-release.keystore"
+            if [ -n "$b64" ] && [ -n "$pass" ]; then
+              printf '%s' "$b64" | base64 -d > "$file"
+            else
+              echo "::warning::No ${name} keystore secret found - using a TEMPORARY key. The ${name} APK will not install over an APK signed with a different key."
+              pass="$(openssl rand -hex 16)"
+              keytool -genkeypair -keystore "$file" -alias "$alias" -keyalg RSA -keysize 2048 -validity 10000 \
+                -storepass "$pass" -keypass "$pass" -dname "CN=Lucky Wine, O=Lucky Wine, C=IN" >/dev/null 2>&1
+              temporary=true
+            fi
+            echo "::add-mask::$pass"
+            printf '%s' "$pass" > "keystores/.${name}.pass"
+          }
+
+          make_key users users-release-key "${USERS_KEYSTORE_BASE64:-}" "${USERS_KEYSTORE_PASSWORD:-}"
+          make_key admin admin-release-key "${ADMIN_KEYSTORE_BASE64:-}" "${ADMIN_KEYSTORE_PASSWORD:-}"
+
+          cat > keystores/keystore.properties <<EOF
+          USERS_STORE_FILE=${GITHUB_WORKSPACE}/keystores/users-release.keystore
+          USERS_STORE_PASSWORD=$(cat keystores/.users.pass)
+          USERS_KEY_ALIAS=users-release-key
+          USERS_KEY_PASSWORD=$(cat keystores/.users.pass)
+          ADMIN_STORE_FILE=${GITHUB_WORKSPACE}/keystores/admin-release.keystore
+          ADMIN_STORE_PASSWORD=$(cat keystores/.admin.pass)
+          ADMIN_KEY_ALIAS=admin-release-key
+          ADMIN_KEY_PASSWORD=$(cat keystores/.admin.pass)
+          EOF
+          rm -f keystores/.users.pass keystores/.admin.pass
+          echo "temporary=${temporary}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute version
+        id: version
+        run: |
+          # versionCode always increases (minutes since epoch) so each build can update the previous one
+          echo "code=$(( $(date +%s) / 60 ))" >> "$GITHUB_OUTPUT"
+          echo "name=1.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync Capacitor and build users APK
+        working-directory: users
+        run: |
+          npx cap sync android
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -PappVersionCode=${{ steps.version.outputs.code }} \
+            -PappVersionName=${{ steps.version.outputs.name }}
+
+      - name: Sync Capacitor and build admin APK
+        working-directory: admin
+        run: |
+          npx cap sync android
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -PappVersionCode=${{ steps.version.outputs.code }} \
+            -PappVersionName=${{ steps.version.outputs.name }}
+
+      - name: Collect APKs
+        id: apks
+        run: |
+          set -euo pipefail
+          mkdir -p dist-apks
+          V="${{ steps.version.outputs.name }}"
+          cp users/android/app/build/outputs/apk/release/app-release.apk "dist-apks/lucky-users-v${V}-${LABEL}.apk"
+          cp admin/android/app/build/outputs/apk/release/app-release.apk "dist-apks/lucky-admin-v${V}-${LABEL}.apk"
+          ls -lh dist-apks
+
+      - name: Upload to Gofile.io
+        id: gofile
+        run: |
+          set -uo pipefail
+          chmod +x scripts/upload-gofile.sh
+          USERS_FILE=$(ls dist-apks/lucky-users-*.apk)
+          ADMIN_FILE=$(ls dist-apks/lucky-admin-*.apk)
+          USERS_LINK=$(scripts/upload-gofile.sh "$USERS_FILE" || true)
+          ADMIN_LINK=$(scripts/upload-gofile.sh "$ADMIN_FILE" || true)
+          {
+            echo "## Release APKs"
+            echo ""
+            echo "| App | Package | File | Size | Download |"
+            echo "|---|---|---|---|---|"
+            echo "| Customer | \`com.wine.lucky\` | $(basename "$USERS_FILE") | $(du -h "$USERS_FILE" | cut -f1) | ${USERS_LINK:-upload failed - use the workflow artifact} |"
+            echo "| Admin | \`wine.admin.lucky\` | $(basename "$ADMIN_FILE") | $(du -h "$ADMIN_FILE" | cut -f1) | ${ADMIN_LINK:-upload failed - use the workflow artifact} |"
+            echo ""
+            if [ "${{ steps.keys.outputs.temporary }}" = "true" ]; then
+              echo "> **Warning:** at least one APK was signed with a temporary key (no keystore secret set). Add the keystore secrets from README.md so builds can update each other."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Customer APK: ${USERS_LINK:-FAILED}"
+          echo "Admin APK:    ${ADMIN_LINK:-FAILED}"
+          [ -n "$USERS_LINK" ] && [ -n "$ADMIN_LINK" ]
+
+      - name: Keep APKs as workflow artifact (backup if Gofile is down)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lucky-apks
+          path: dist-apks/*.apk
+          retention-days: 14
+          if-no-files-found: ignore

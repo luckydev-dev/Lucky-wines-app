@@ -6,9 +6,18 @@ import {
   set,
   update,
   remove,
-  push,
   onValue,
+  query,
+  orderByChild,
+  equalTo,
 } from 'firebase/database';
+import {
+  getAuth,
+  signInAnonymously,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+} from 'firebase/auth';
 import { FIREBASE_CONFIG, DEFAULT_SETTINGS } from '../config/firebase.config';
 import { Product, Category, Banner, StoreSettings, Order } from '../types';
 
@@ -23,6 +32,71 @@ export function getFirebaseApp() {
 export function getRTDB() {
   const app = getFirebaseApp();
   return getDatabase(app);
+}
+
+// -------------------------------------------------------------
+// AUTH
+// -------------------------------------------------------------
+
+export function getFirebaseAuth() {
+  return getAuth(getFirebaseApp());
+}
+
+let customerAuthPromise: Promise<string> | null = null;
+
+/**
+ * Customer app: every device gets an anonymous Firebase user so database
+ * rules can tie an order to its owner (auth.uid).
+ * Requires "Anonymous" sign-in to be enabled in Firebase Console -> Authentication.
+ */
+export function ensureCustomerAuth(): Promise<string> {
+  const auth = getFirebaseAuth();
+  if (auth.currentUser) return Promise.resolve(auth.currentUser.uid);
+  if (!customerAuthPromise) {
+    customerAuthPromise = signInAnonymously(auth)
+      .then((cred) => cred.user.uid)
+      .finally(() => {
+        customerAuthPromise = null;
+      });
+  }
+  return customerAuthPromise;
+}
+
+/** Admin app: email + password. Signs out again unless the uid exists under /admins. */
+export async function adminSignIn(email: string, password: string): Promise<void> {
+  const auth = getFirebaseAuth();
+  const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+  const snap = await get(ref(getRTDB(), `admins/${cred.user.uid}`));
+  if (!snap.exists()) {
+    await signOut(auth);
+    throw new Error('NOT_ADMIN');
+  }
+}
+
+export async function adminSignOut(): Promise<void> {
+  await signOut(getFirebaseAuth());
+}
+
+/** Reports 'in' only for a signed-in (non-anonymous) user whose uid exists under /admins. */
+export function subscribeToAdminSession(onChange: (state: 'in' | 'out') => void): () => void {
+  const auth = getFirebaseAuth();
+  return onAuthStateChanged(auth, async (user) => {
+    if (!user || user.isAnonymous) {
+      onChange('out');
+      return;
+    }
+    try {
+      const snap = await get(ref(getRTDB(), `admins/${user.uid}`));
+      if (snap.exists()) {
+        onChange('in');
+      } else {
+        await signOut(auth);
+        onChange('out');
+      }
+    } catch {
+      onChange('out');
+    }
+  });
 }
 
 // -------------------------------------------------------------
@@ -151,10 +225,34 @@ export function subscribeToOrders(onUpdate: (orders: Order[]) => void): () => vo
   }
 }
 
-export async function createOrderInRTDB(order: Order): Promise<string> {
+/** Customer app: only the signed-in customer's own orders (the full list is admin-only). */
+export function subscribeToMyOrders(uid: string, onUpdate: (orders: Order[]) => void): () => void {
   const db = getRTDB();
-  const orderRef = ref(db, `orders/${order.id}`);
-  await set(orderRef, order);
+  const myOrdersQuery = query(ref(db, 'orders'), orderByChild('userId'), equalTo(uid));
+  return onValue(
+    myOrdersQuery,
+    (snapshot) => {
+      const list: Order[] = snapshot.exists() ? Object.values(snapshot.val()) : [];
+      list.sort((a, b) => b.createdAt - a.createdAt);
+      onUpdate(list);
+    },
+    (err) => {
+      console.warn('My orders subscription error:', err);
+      onUpdate([]);
+    }
+  );
+}
+
+/**
+ * Saves a new order owned by the current (anonymous) customer.
+ * Throws if the write is rejected, so the caller must NOT show the order as placed on failure.
+ */
+export async function createOrderInRTDB(order: Order): Promise<string> {
+  const uid = await ensureCustomerAuth();
+  const db = getRTDB();
+  // RTDB rejects `undefined`, so drop any undefined fields before writing.
+  const clean = JSON.parse(JSON.stringify({ ...order, userId: uid })) as Order;
+  await set(ref(db, `orders/${order.id}`), clean);
   return order.id;
 }
 
@@ -203,10 +301,15 @@ export async function updateStoreSettingsInRTDB(settings: Partial<StoreSettings>
   await update(ref(db, 'settings'), settings);
 }
 
-export async function updateOrderStatusInRTDB(orderId: string, status: Order['status']) {
+export async function updateOrderStatusInRTDB(
+  orderId: string,
+  status: Order['status'],
+  extra: { paymentStatus?: Order['paymentStatus'] } = {}
+) {
   const db = getRTDB();
   await update(ref(db, `orders/${orderId}`), {
     status,
+    ...extra,
     updatedAt: Date.now(),
   });
 }

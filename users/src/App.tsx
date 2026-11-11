@@ -17,7 +17,8 @@ import {
   subscribeToBanners,
   createOrderInRTDB,
   subscribeToSingleOrder,
-  subscribeToOrders,
+  subscribeToMyOrders,
+  ensureCustomerAuth,
   IconMapPin,
   IconSearch,
   IconBell,
@@ -237,10 +238,7 @@ function HyperMartStorefront() {
   });
 
   // Cart State
-  const [cart, setCart] = useState<Record<string, number>>({
-    prod_1: 1,
-    prod_2: 2,
-  });
+  const [cart, setCart] = useState<Record<string, number>>({});
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   // Selected Drink for Detail Modal
@@ -248,9 +246,10 @@ function HyperMartStorefront() {
 
   // Dedicated Fullscreen Checkout View (Removed delivery option as requested)
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  const [deliveryAddress, setDeliveryAddress] = useState('Flat 402, 12th Main, BTM Layout 2nd Stage');
-  const [pincode, setPincode] = useState('560038');
-  const [contactPhone, setContactPhone] = useState('+91 98451 22890');
+  const [customerName, setCustomerName] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [pincode, setPincode] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'cod'>('upi');
   const [utrNumber, setUtrNumber] = useState('');
   const [ageConsent, setAgeConsent] = useState(false);
@@ -287,17 +286,25 @@ function HyperMartStorefront() {
       }
     });
 
-    const unsubOrders = subscribeToOrders((liveOrders) => {
-      if (liveOrders && liveOrders.length > 0) {
-        setMyOrders(liveOrders);
-      }
-    });
-
     return () => {
       unsubProds();
       unsubSettings();
       unsubBanners();
-      unsubOrders();
+    };
+  }, []);
+
+  // This customer's own orders only (other customers' orders are never downloaded)
+  useEffect(() => {
+    let cancelled = false;
+    let unsub: () => void = () => {};
+    ensureCustomerAuth()
+      .then((uid) => {
+        if (!cancelled) unsub = subscribeToMyOrders(uid, setMyOrders);
+      })
+      .catch((err) => console.warn('Customer sign-in failed:', err));
+    return () => {
+      cancelled = true;
+      unsub();
     };
   }, []);
 
@@ -352,6 +359,7 @@ function HyperMartStorefront() {
   });
 
   const handlePlaceOrder = async () => {
+    if (isSubmittingOrder) return;
     if (!storeSettings.isOpen) {
       showToast('Store is currently paused. Please try again later.', 'warning');
       return;
@@ -364,42 +372,81 @@ function HyperMartStorefront() {
       showToast('Your cart is empty', 'warning');
       return;
     }
-    if (paymentMethod === 'upi' && !utrNumber.trim()) {
+    if (cartSubtotal < storeSettings.minOrder) {
+      showToast(`Minimum order is ₹${storeSettings.minOrder}`, 'warning');
+      return;
+    }
+    const name = customerName.trim();
+    const address = deliveryAddress.trim();
+    const pin = pincode.trim();
+    const phone = contactPhone.trim();
+    if (!name) {
+      showToast('Please enter your name', 'warning');
+      return;
+    }
+    if (!address) {
+      showToast('Please enter your delivery address', 'warning');
+      return;
+    }
+    if (!/^[0-9]{6}$/.test(pin)) {
+      showToast('Please enter a valid 6-digit pincode', 'warning');
+      return;
+    }
+    if (storeSettings.pincodes && storeSettings.pincodes.length > 0 && !storeSettings.pincodes.includes(pin)) {
+      showToast('Sorry, we do not deliver to this pincode yet', 'warning');
+      return;
+    }
+    if (phone.replace(/[^0-9]/g, '').length < 10) {
+      showToast('Please enter a valid phone number', 'warning');
+      return;
+    }
+    const utr = utrNumber.trim();
+    if (paymentMethod === 'upi' && !/^[0-9]{12}$/.test(utr)) {
       showToast('Please enter your 12-digit UPI UTR number', 'warning');
       return;
     }
 
+    const orderItems = Object.entries(cart).flatMap(([pId, qty]) => {
+      const item = products.find((x) => x.id === pId);
+      return item
+        ? [{
+            productId: pId,
+            name: item.name,
+            brand: item.brand,
+            price: item.price,
+            mrp: item.mrp,
+            sizeMl: item.sizeMl,
+            image: item.images?.[0] ?? '',
+            quantity: qty,
+          }]
+        : [];
+    });
+    if (orderItems.length !== Object.keys(cart).length) {
+      showToast('Some items in your cart are no longer available. Please review your cart.', 'warning');
+      return;
+    }
+
     setIsSubmittingOrder(true);
-    const orderId = `LW-${Math.floor(1000 + Math.random() * 9000)}`;
+    // Collision-resistant id (time + random) so two customers can never overwrite each other's order
+    const orderId = `LW-${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1296).toString(36).toUpperCase().padStart(2, '0')}`;
     const newOrder: Order = {
       id: orderId,
-      userId: 'user_live_1',
-      userName: 'Rohit Sharma',
-      userPhone: contactPhone,
+      userId: '', // replaced with the signed-in customer's uid when the order is saved
+      userName: name,
+      userPhone: phone,
       address: {
         id: 'addr_1',
         label: 'Home',
-        line1: deliveryAddress,
-        pincode: pincode,
+        line1: address,
+        pincode: pin,
       },
-      items: Object.entries(cart).map(([pId, qty]) => {
-        const item = products.find((x) => x.id === pId)!;
-        return {
-          productId: pId,
-          name: item.name,
-          brand: item.brand,
-          price: item.price,
-          mrp: item.mrp,
-          sizeMl: item.sizeMl,
-          image: item.images[0],
-          quantity: qty,
-        };
-      }),
+      items: orderItems,
       subtotal: cartSubtotal,
       deliveryFee: deliveryFee,
       total: cartGrandTotal,
       paymentMethod: paymentMethod,
       paymentStatus: paymentMethod === 'upi' ? 'awaiting_verification' : 'pending',
+      ...(paymentMethod === 'upi' ? { utr } : {}),
       status: 'placed',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -413,13 +460,10 @@ function HyperMartStorefront() {
       setActiveTrackingOrderId(orderId);
       setTrackedOrder(newOrder);
       showToast(`Order #${orderId} placed successfully!`, 'success');
-    } catch {
-      setCart({});
-      setIsCheckoutOpen(false);
-      setIsCartOpen(false);
-      setActiveTrackingOrderId(orderId);
-      setTrackedOrder(newOrder);
-      showToast(`Order #${orderId} confirmed!`, 'success');
+    } catch (err) {
+      // Never tell the customer the order is placed when it was not saved.
+      console.error('Order placement failed:', err);
+      showToast('Could not place your order. Check your connection and try again.', 'error');
     } finally {
       setIsSubmittingOrder(false);
     }
@@ -550,10 +594,36 @@ function HyperMartStorefront() {
 
             <div>
               <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>
+                Your Name
+              </label>
+              <input
+                type="text"
+                autoComplete="name"
+                placeholder="Full name"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  border: '1px solid #CBD5E1',
+                  backgroundColor: '#FFFFFF',
+                  fontSize: '13px',
+                  color: '#1E293B',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>
                 House / Street Address
               </label>
               <input
                 type="text"
+                autoComplete="street-address"
+                placeholder="Flat / house no., street, area"
                 value={deliveryAddress}
                 onChange={(e) => setDeliveryAddress(e.target.value)}
                 style={{
@@ -577,8 +647,11 @@ function HyperMartStorefront() {
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="6-digit pincode"
                   value={pincode}
-                  onChange={(e) => setPincode(e.target.value)}
+                  onChange={(e) => setPincode(e.target.value.replace(/[^0-9]/g, ''))}
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -598,7 +671,9 @@ function HyperMartStorefront() {
                   Phone
                 </label>
                 <input
-                  type="text"
+                  type="tel"
+                  autoComplete="tel"
+                  placeholder="10-digit mobile"
                   value={contactPhone}
                   onChange={(e) => setContactPhone(e.target.value)}
                   style={{

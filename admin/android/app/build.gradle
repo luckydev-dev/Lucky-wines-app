@@ -13,8 +13,9 @@ android {
         applicationId "wine.admin.lucky"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName "1.0.2"
+        // Passed in by scripts/build-and-upload.sh and the GitHub workflow so every build is installable as an update
+        versionCode (project.findProperty('appVersionCode') ?: '3').toInteger()
+        versionName (project.findProperty('appVersionName') ?: '1.0.2')
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
@@ -23,16 +24,21 @@ android {
 
     signingConfigs {
         release {
-            storeFile file(keystoreProps['ADMIN_STORE_FILE'] ?: '/app/applet/keystores/admin-release.keystore')
-            storePassword keystoreProps['ADMIN_STORE_PASSWORD'] ?: 'LuckyWineAdminPass2026'
-            keyAlias keystoreProps['ADMIN_KEY_ALIAS'] ?: 'admin-release-key'
-            keyPassword keystoreProps['ADMIN_KEY_PASSWORD'] ?: 'LuckyWineAdminPass2026'
+            // Credentials come from keystores/keystore.properties (git-ignored) - never hardcode them here
+            if (keystoreProps['ADMIN_STORE_FILE']) {
+                storeFile file(keystoreProps['ADMIN_STORE_FILE'])
+                storePassword keystoreProps['ADMIN_STORE_PASSWORD']
+                keyAlias keystoreProps['ADMIN_KEY_ALIAS']
+                keyPassword keystoreProps['ADMIN_KEY_PASSWORD']
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (keystoreProps['ADMIN_STORE_FILE']) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

@@ -322,6 +322,31 @@ export async function updateOrderPaymentStatusInRTDB(orderId: string, paymentSta
   });
 }
 
+/**
+ * Customer taps "I have paid" after paying by UPI. This only records that the customer says they paid
+ * (paymentStatus = payment_submitted); the shop owner verifies it in the admin app.
+ * Uses a root multi-path update so each field is checked against its own database rule.
+ */
+export async function submitUpiPayment(orderId: string, utr?: string): Promise<void> {
+  await ensureCustomerAuth();
+  const updates: Record<string, unknown> = {
+    [`orders/${orderId}/paymentStatus`]: 'payment_submitted',
+    [`orders/${orderId}/updatedAt`]: Date.now(),
+  };
+  const cleanUtr = utr?.trim();
+  if (cleanUtr) updates[`orders/${orderId}/utr`] = cleanUtr;
+  await update(ref(getRTDB()), updates);
+}
+
+/** Customer cancels their own order. The database only allows this while the order is still "placed". */
+export async function cancelMyOrder(orderId: string): Promise<void> {
+  await ensureCustomerAuth();
+  await update(ref(getRTDB()), {
+    [`orders/${orderId}/status`]: 'cancelled',
+    [`orders/${orderId}/updatedAt`]: Date.now(),
+  });
+}
+
 export async function seedRealtimeDatabase(seedData: any): Promise<boolean> {
   try {
     const db = getRTDB();

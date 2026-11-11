@@ -1,0 +1,6 @@
+{
+  "name": "Lucky Wine & Liquor",
+  "description": "Premium wine and liquor ordering and store management system",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

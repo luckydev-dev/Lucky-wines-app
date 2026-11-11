@@ -1,0 +1,15 @@
+{
+  "name": "lucky-wine-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "users",
+    "admin",
+    "shared"
+  ],
+  "scripts": {
+    "build:users": "npm --workspace=users run build",
+    "build:admin": "npm --workspace=admin run build",
+    "build:all": "npm run build:users && npm run build:admin"
+  }
+}

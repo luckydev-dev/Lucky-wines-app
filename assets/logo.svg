@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4A081A"/>
+      <stop offset="50%" stop-color="#2D030E"/>
+      <stop offset="100%" stop-color="#140106"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FCEBA4"/>
+      <stop offset="35%" stop-color="#D4AF37"/>
+      <stop offset="100%" stop-color="#997D20"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Shield / Rounded Squircle -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+  
+  <!-- Outer Gold Rim -->
+  <rect x="16" y="16" width="480" height="480" rx="112" stroke="url(#goldGrad)" stroke-width="4" stroke-opacity="0.4"/>
+  <circle cx="256" cy="256" r="180" stroke="url(#goldGrad)" stroke-width="1.5" stroke-dasharray="6 6" stroke-opacity="0.3"/>
+
+  <!-- Stylized Wine Bottle & Goblet Emblem -->
+  <g transform="translate(146, 116)">
+    <!-- Wine Bottle -->
+    <path d="M70 20 L90 20 L90 60 L120 100 L120 250 L40 250 L40 100 L70 60 Z" fill="#6E0F2B" stroke="url(#goldGrad)" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M70 20 L90 20 L90 32 L70 32 Z" fill="url(#goldGrad)"/>
+    <rect x="52" y="130" width="56" height="70" rx="4" fill="#151113" stroke="url(#goldGrad)" stroke-width="2"/>
+    <!-- Bottle Label 'L' Mark -->
+    <path d="M72 150 L72 180 L92 180" stroke="url(#goldGrad)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    
+    <!-- Wine Glass Silhouette Overlapping -->
+    <path d="M110 140 C110 195 170 195 170 140 Z" fill="#8C1438" stroke="url(#goldGrad)" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M140 195 L140 250" stroke="url(#goldGrad)" stroke-width="5" stroke-linecap="round"/>
+    <path d="M120 250 L160 250" stroke="url(#goldGrad)" stroke-width="6" stroke-linecap="round"/>
+    <!-- Liquid Surface in Glass -->
+    <path d="M116 156 Q140 166 164 156" stroke="url(#goldGrad)" stroke-width="2.5" fill="none"/>
+  </g>
+
+  <!-- Stars / Accent sparkles -->
+  <path d="M256 60 L260 76 L276 80 L260 84 L256 100 L252 84 L236 80 L252 76 Z" fill="url(#goldGrad)"/>
+  <path d="M100 240 L102 248 L110 250 L102 252 L100 260 L98 252 L90 250 L98 248 Z" fill="url(#goldGrad)" opacity="0.8"/>
+  <path d="M410 240 L412 248 L420 250 L412 252 L410 260 L408 252 L400 250 L408 248 Z" fill="url(#goldGrad)" opacity="0.8"/>
+
+  <!-- Brand Typography -->
+  <text x="256" y="420" font-family="'Cinzel', 'Playfair Display', serif, Georgia" font-size="34" font-weight="700" fill="url(#goldGrad)" text-anchor="middle" letter-spacing="4">LUCKY WINE</text>
+  <text x="256" y="448" font-family="sans-serif" font-size="14" font-weight="500" fill="#EAE2D9" text-anchor="middle" letter-spacing="6" opacity="0.85">&amp; LIQUOR STORE</text>
+</svg>

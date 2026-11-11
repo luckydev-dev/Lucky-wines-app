@@ -2,6 +2,7 @@ export * from './types';
 export * from './config/firebase.config';
 export * from './theme/tokens';
 export * from './utils/formatters';
+export * from './utils/upi';
 export * from './data/firebaseService';
 
 // Icons & Visual Assets

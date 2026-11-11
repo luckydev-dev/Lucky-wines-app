@@ -86,11 +86,20 @@
         "deliveryFee": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
         "total": { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() === newData.parent().child('subtotal').val() + newData.parent().child('deliveryFee').val()" },
         "paymentMethod": { ".validate": "newData.val() === 'cod' || newData.val() === 'upi'" },
-        "paymentStatus": { ".validate": "newData.val() === 'pending' || newData.val() === 'awaiting_verification' || newData.val() === 'payment_submitted' || newData.val() === 'paid' || newData.val() === 'failed'" },
+        "paymentStatus": {
+          ".write": "auth != null && data.parent().child('userId').val() === auth.uid && data.val() === 'awaiting_verification' && newData.val() === 'payment_submitted'",
+          ".validate": "newData.val() === 'pending' || newData.val() === 'awaiting_verification' || newData.val() === 'payment_submitted' || newData.val() === 'paid' || newData.val() === 'failed'"
+        },
         "status": { ".validate": "newData.val() === 'placed' || newData.val() === 'confirmed' || newData.val() === 'packed' || newData.val() === 'out_for_delivery' || newData.val() === 'delivered' || newData.val() === 'cancelled'" },
-        "utr": { ".validate": "newData.isString() && newData.val().length <= 30" },
+        "utr": {
+          ".write": "auth != null && data.parent().child('userId').val() === auth.uid && !data.exists() && data.parent().child('paymentMethod').val() === 'upi'",
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9]{12}$/)"
+        },
         "createdAt": { ".validate": "newData.isNumber()" },
-        "updatedAt": { ".validate": "newData.isNumber()" },
+        "updatedAt": {
+          ".write": "auth != null && data.parent().child('userId').val() === auth.uid",
+          ".validate": "newData.isNumber()"
+        },
         "address": {
           ".validate": "newData.hasChildren(['line1', 'pincode'])",
           "line1": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 300" },

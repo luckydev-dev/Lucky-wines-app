@@ -45,6 +45,8 @@ import {
   getCategoryEmoji,
 } from '@lucky/shared';
 
+import UpiPaymentPanel from './UpiPaymentPanel';
+
 const SEED_DRINKS: Product[] = [
   {
     id: 'prod_1',
@@ -251,7 +253,6 @@ function HyperMartStorefront() {
   const [pincode, setPincode] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'cod'>('upi');
-  const [utrNumber, setUtrNumber] = useState('');
   const [ageConsent, setAgeConsent] = useState(false);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
 
@@ -400,12 +401,6 @@ function HyperMartStorefront() {
       showToast('Please enter a valid phone number', 'warning');
       return;
     }
-    const utr = utrNumber.trim();
-    if (paymentMethod === 'upi' && !/^[0-9]{12}$/.test(utr)) {
-      showToast('Please enter your 12-digit UPI UTR number', 'warning');
-      return;
-    }
-
     const orderItems = Object.entries(cart).flatMap(([pId, qty]) => {
       const item = products.find((x) => x.id === pId);
       return item
@@ -446,7 +441,6 @@ function HyperMartStorefront() {
       total: cartGrandTotal,
       paymentMethod: paymentMethod,
       paymentStatus: paymentMethod === 'upi' ? 'awaiting_verification' : 'pending',
-      ...(paymentMethod === 'upi' ? { utr } : {}),
       status: 'placed',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -797,28 +791,10 @@ function HyperMartStorefront() {
                   </div>
                 </div>
 
-                <div style={{ fontSize: '11px', color: '#64748B' }}>
-                  Transfer <strong>₹{cartGrandTotal.toLocaleString('en-IN')}</strong> then enter the 12-digit UTR reference ID:
+                <div style={{ fontSize: '11px', color: '#64748B', lineHeight: 1.4 }}>
+                  After you place the order you will get a <strong>QR code</strong> and <strong>UPI app buttons</strong> to pay{' '}
+                  <strong>₹{cartGrandTotal.toLocaleString('en-IN')}</strong>. The store confirms your payment manually.
                 </div>
-
-                <input
-                  type="text"
-                  maxLength={16}
-                  placeholder="Enter 12-digit UTR / Ref ID"
-                  value={utrNumber}
-                  onChange={(e) => setUtrNumber(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
-                    fontSize: '13px',
-                    color: '#1E293B',
-                    fontFamily: 'monospace',
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                  }}
-                />
               </div>
             )}
           </div>
@@ -1851,6 +1827,7 @@ function HyperMartStorefront() {
       >
         {trackedOrder && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <UpiPaymentPanel order={trackedOrder} settings={storeSettings} />
             <div style={{
               backgroundColor: '#FFFFFF',
               borderRadius: '16px',
@@ -1917,13 +1894,13 @@ function HyperMartStorefront() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <AnimatedTruck size={22} color="#4AB7B6" />
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#1E293B' }}>Suresh Kumar</div>
-                  <div style={{ fontSize: '11px', color: '#64748B' }}>Lucky Express Partner</div>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#1E293B' }}>{storeSettings.shopName}</div>
+                  <div style={{ fontSize: '11px', color: '#64748B' }}>Questions about your order?</div>
                 </div>
               </div>
 
               <a
-                href="tel:+919876543210"
+                href={`tel:${storeSettings.phone.replace(/[^0-9+]/g, '')}`}
                 style={{
                   backgroundColor: '#4AB7B6',
                   color: '#FFFFFF',
@@ -1938,7 +1915,7 @@ function HyperMartStorefront() {
                 }}
               >
                 <IconPhone size={14} color="#FFFFFF" />
-                <span>Call</span>
+                <span>Call store</span>
               </a>
             </div>
 

@@ -322,6 +322,20 @@ export async function updateOrderPaymentStatusInRTDB(orderId: string, paymentSta
   });
 }
 
+/**
+ * Customer says "I have paid" and gives the 12-digit UTR. The admin then verifies it.
+ * Rules only allow awaiting_verification -> payment_submitted, and only for the order's owner.
+ */
+export async function submitUpiPaymentInRTDB(orderId: string, utr: string): Promise<void> {
+  await ensureCustomerAuth();
+  const db = getRTDB();
+  await update(ref(db), {
+    [`orders/${orderId}/paymentStatus`]: 'payment_submitted',
+    [`orders/${orderId}/utr`]: utr,
+    [`orders/${orderId}/updatedAt`]: Date.now(),
+  });
+}
+
 export async function seedRealtimeDatabase(seedData: any): Promise<boolean> {
   try {
     const db = getRTDB();

@@ -156,6 +156,16 @@ function HyperMartAdmin() {
     }
   };
 
+  const handlePaymentNotReceived = async (orderId: string) => {
+    try {
+      await updateOrderPaymentStatusInRTDB(orderId, 'failed');
+      showToast(`Payment marked as not received for Order #${orderId}`, 'warning');
+    } catch (err) {
+      console.error('Marking payment failed did not save:', err);
+      showToast('Could not update the payment. Check your connection and sign-in.', 'error');
+    }
+  };
+
   const handleToggleProductStock = async (product: Product) => {
     const updatedStock = product.stock > 0 ? 0 : 25;
     try {
@@ -303,11 +313,11 @@ function HyperMartAdmin() {
 
   const todayRevenue = orders.reduce((sum, o) => sum + o.total, 0);
   const pendingOrdersCount = orders.filter(
-    (o) => o.status === 'placed' || o.paymentStatus === 'awaiting_verification'
+    (o) => o.status === 'placed' || o.paymentStatus === 'awaiting_verification' || o.paymentStatus === 'payment_submitted'
   ).length;
 
   const filteredOrders = orders.filter((o) => {
-    if (orderFilter === 'pending') return o.status === 'placed' || o.paymentStatus === 'awaiting_verification';
+    if (orderFilter === 'pending') return o.status === 'placed' || o.paymentStatus === 'awaiting_verification' || o.paymentStatus === 'payment_submitted';
     if (orderFilter === 'active') return o.status === 'confirmed' || o.status === 'packed' || o.status === 'out_for_delivery';
     if (orderFilter === 'delivered') return o.status === 'delivered';
     return true;
@@ -536,10 +546,33 @@ function HyperMartAdmin() {
                       <div style={{ fontSize: '16px', fontWeight: 800, color: '#1E293B' }}>
                         ₹{order.total.toLocaleString('en-IN')}
                       </div>
+                      {order.utr && (
+                        <div style={{ fontSize: '11px', color: '#475569', fontFamily: 'monospace', marginTop: '2px' }}>
+                          UTR: {order.utr}
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      {order.paymentStatus === 'awaiting_verification' && (
+                      {order.paymentStatus === 'payment_submitted' && (
+                        <button
+                          onClick={() => handlePaymentNotReceived(order.id)}
+                          style={{
+                            backgroundColor: '#FFFFFF',
+                            color: '#EA7173',
+                            border: '1.5px solid #EA7173',
+                            borderRadius: '10px',
+                            padding: '8px 12px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Not received
+                        </button>
+                      )}
+
+                      {(order.paymentStatus === 'awaiting_verification' || order.paymentStatus === 'payment_submitted') && (
                         <button
                           onClick={() => handleVerifyUPI(order.id)}
                           style={{

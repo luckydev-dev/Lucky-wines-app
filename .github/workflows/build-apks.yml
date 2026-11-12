@@ -65,6 +65,17 @@ jobs:
         run: |
           npm run build:all
 
+      - name: Add Firebase config (google-services.json) if provided
+        # Optional. Needed only for push notifications to the admin app.
+        # Download each file from Firebase Console -> Project settings -> Your apps, then store
+        # `base64 -w0 google-services.json` in the matching repository secret.
+        env:
+          USERS_GS: ${{ secrets.USERS_GOOGLE_SERVICES_JSON_BASE64 }}
+          ADMIN_GS: ${{ secrets.ADMIN_GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -n "$USERS_GS" ]; then echo "$USERS_GS" | base64 -d > users/android/app/google-services.json; echo "users google-services.json written"; fi
+          if [ -n "$ADMIN_GS" ]; then echo "$ADMIN_GS" | base64 -d > admin/android/app/google-services.json; echo "admin google-services.json written"; else echo "No admin google-services.json: push notifications disabled (in-app alerts still work)"; fi
+
       - name: Prepare signing keys
         id: keys
         run: |

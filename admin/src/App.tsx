@@ -44,7 +44,7 @@ import {
 } from '@lucky/shared';
 
 import { OrderAlerts, MyDevices } from './DeviceAlerts';
-import { CategoriesManager, CustomersList, BulkEdit } from './Manage';
+import { CategoriesManager, CustomersList, BulkEdit, BannersManager } from './Manage';
 import { unregisterThisDevice } from './alerts';
 
 const LOW_STOCK_LIMIT = 5;
@@ -75,15 +75,6 @@ function HyperMartAdmin() {
     pincodes: ['560001', '560002', '560025', '560034', '560038'],
     cutoffTime: '22:30',
     minAgeNotice: 'You must be 21+ years of age to purchase alcoholic beverages.',
-  });
-
-  // Promo Banner in User App (Editable from Admin)
-  const [promoBanner, setPromoBanner] = useState({
-    title: 'Happy Weekend',
-    discount: '25% OFF',
-    subtitle: '*for All Chilled Drinks',
-    imageUrl: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=500&auto=format&fit=crop&q=80',
-    active: true,
   });
 
   // Product Add / Edit Modal State
@@ -122,23 +113,10 @@ function HyperMartAdmin() {
         setPincodeText((settings.pincodes ?? []).join(', '));
       }
     });
-    const unsubBanners = subscribeToBanners((banners) => {
-      if (banners && banners.length > 0) {
-        const b = banners[0];
-        setPromoBanner({
-          title: b.title || 'Happy Weekend',
-          discount: b.subtitle || '25% OFF',
-          subtitle: '*for All Chilled Drinks',
-          imageUrl: b.image || 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=500',
-          active: b.active ?? true,
-        });
-      }
-    });
     const unsubCats = subscribeToCategories((c) => setCategoryOptions(c.map((x) => ({ id: x.id, name: x.name }))));
     return () => {
       unsubCats();
       unsubProducts();
-      unsubBanners();
     };
   }, []);
 
@@ -341,21 +319,6 @@ function HyperMartAdmin() {
     } catch (err) {
       console.error('Settings save failed:', err);
       showToast('Could not save settings. Check your connection and sign-in.', 'error');
-    }
-  };
-
-  const handleSavePromoBanner = async () => {
-    try {
-      await updateBannerInRTDB('b1', {
-        title: promoBanner.title,
-        subtitle: promoBanner.discount,
-        image: promoBanner.imageUrl,
-        active: promoBanner.active,
-      });
-      showToast('Promo banner updated on customer app!', 'success');
-    } catch (err) {
-      console.error('Banner save failed:', err);
-      showToast('Could not save the banner. Check your connection and sign-in.', 'error');
     }
   };
 
@@ -1114,79 +1077,7 @@ function HyperMartAdmin() {
 
             <CustomersList orders={orders} />
 
-            {/* Section A: Customer App Promo Banner Editor */}
-            <div style={{
-              backgroundColor: '#FFFFFF',
-              borderRadius: '18px',
-              padding: '18px',
-              border: '1px solid #E8F2F2',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '14px', fontWeight: 800, color: '#1E293B' }}>
-                  Homepage Promo Banner
-                </span>
-                <span style={{ fontSize: '11px', color: '#4AB7B6', fontWeight: 700 }}>
-                  Updates User App Instantly
-                </span>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>
-                  Banner Title
-                </label>
-                <input
-                  type="text"
-                  value={promoBanner.title}
-                  onChange={(e) => setPromoBanner({ ...promoBanner, title: e.target.value })}
-                  style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>
-                    Discount Tag
-                  </label>
-                  <input
-                    type="text"
-                    value={promoBanner.discount}
-                    onChange={(e) => setPromoBanner({ ...promoBanner, discount: e.target.value })}
-                    style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>
-                    Banner Subtitle
-                  </label>
-                  <input
-                    type="text"
-                    value={promoBanner.subtitle}
-                    onChange={(e) => setPromoBanner({ ...promoBanner, subtitle: e.target.value })}
-                    style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
-                  />
-                </div>
-              </div>
-
-              <button
-                onClick={handleSavePromoBanner}
-                style={{
-                  backgroundColor: '#FDAA5D',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: '10px',
-                  padding: '10px',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                Save Promo Banner
-              </button>
-            </div>
+            <BannersManager categories={categoryOptions} showToast={showToast} />
 
             {/* Section B: Store & Payment Configuration */}
             <div style={{

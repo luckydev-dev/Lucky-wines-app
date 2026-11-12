@@ -48,6 +48,9 @@ export interface Banner {
   active: boolean;
   title?: string;
   subtitle?: string;
+  /** Optional schedule (ms since epoch). Outside this window the banner is hidden from customers. */
+  startsAt?: number;
+  endsAt?: number;
 }
 
 export interface Address {

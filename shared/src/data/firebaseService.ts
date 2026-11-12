@@ -334,6 +334,23 @@ export async function updateBannerInRTDB(bannerId: string, updates: Partial<Bann
   await update(ref(db, `banners/${bannerId}`), updates);
 }
 
+export async function saveBannerInRTDB(banner: Banner): Promise<void> {
+  // RTDB rejects undefined, so drop empty optional fields
+  const clean = JSON.parse(JSON.stringify(banner)) as Banner;
+  await set(ref(getRTDB(), `banners/${banner.id}`), clean);
+}
+
+export async function deleteBannerFromRTDB(bannerId: string): Promise<void> {
+  await remove(ref(getRTDB(), `banners/${bannerId}`));
+}
+
+/** Banners the customer should see right now: active, inside their date window, in order. */
+export function filterLiveBanners(banners: Banner[], now: number = Date.now()): Banner[] {
+  return banners
+    .filter((b) => b.active && (!b.startsAt || b.startsAt <= now) && (!b.endsAt || b.endsAt >= now))
+    .sort((a, b) => a.order - b.order);
+}
+
 export async function updateStoreSettingsInRTDB(settings: Partial<StoreSettings>): Promise<void> {
   const db = getRTDB();
   await update(ref(db, 'settings'), settings);

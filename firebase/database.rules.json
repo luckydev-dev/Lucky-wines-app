@@ -104,7 +104,17 @@
         "order",
         "active"
       ],
-      ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+      ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
+      "$bannerId": {
+        "image": { ".validate": "newData.isString() && newData.val().length <= 600" },
+        "title": { ".validate": "newData.isString() && newData.val().length <= 80" },
+        "subtitle": { ".validate": "newData.isString() && newData.val().length <= 120" },
+        "target": { ".validate": "newData.isString() && newData.val().length <= 60" },
+        "order": { ".validate": "newData.isNumber()" },
+        "active": { ".validate": "newData.isBoolean()" },
+        "startsAt": { ".validate": "newData.isNumber()" },
+        "endsAt": { ".validate": "newData.isNumber()" }
+      }
     },
     "users": {
       ".read": "auth != null && root.child('admins').child(auth.uid).exists()",

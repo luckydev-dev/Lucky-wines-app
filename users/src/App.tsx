@@ -16,6 +16,7 @@ import {
   subscribeToProducts,
   subscribeToStoreSettings,
   subscribeToBanners,
+  filterLiveBanners,
   subscribeToCategories,
   createOrderInRTDB,
   subscribeToSingleOrder,
@@ -48,6 +49,7 @@ import {
   getCategoryEmoji,
 } from '@lucky/shared';
 import { UpiPaymentSheet } from './UpiPaymentSheet';
+import { BannerCarousel } from './Banners';
 import { FilterBar, applyFilters, DEFAULT_FILTERS, type CatalogFilters } from './Filters';
 import { LaunchGate, OfflineBanner } from './Launch';
 
@@ -238,13 +240,14 @@ function HyperMartStorefront() {
   });
 
   // Promo Banner (Live from RTDB, editable by Admin)
-  const [promoBanner, setPromoBanner] = useState({
-    title: 'Happy Weekend',
-    discount: '25% OFF',
-    subtitle: '*for All Chilled Drinks',
-    imageUrl: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=500&auto=format&fit=crop&q=80',
-    active: true,
-  });
+  const [allBanners, setAllBanners] = useState<Banner[]>([]);
+  // Re-evaluate the schedule every minute so a banner appears/disappears without a refresh
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setClock(Date.now()), 60000);
+    return () => window.clearInterval(t);
+  }, []);
+  const liveBanners = filterLiveBanners(allBanners, clock);
 
   // Cart State
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -344,16 +347,7 @@ function HyperMartStorefront() {
     });
 
     const unsubBanners = subscribeToBanners((banners) => {
-      if (banners && banners.length > 0) {
-        const b = banners[0];
-        setPromoBanner({
-          title: b.title || 'Happy Weekend',
-          discount: b.subtitle || '25% OFF',
-          subtitle: '*for All Chilled Drinks',
-          imageUrl: b.image || 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=500',
-          active: b.active ?? true,
-        });
-      }
+      setAllBanners(banners ?? []);
     });
 
     return () => {
@@ -1170,66 +1164,14 @@ function HyperMartStorefront() {
             </div>
           </section>
 
-          {/* Hero Promo Banner (Live from RTDB, modified from Admin App) */}
-          {selectedCategory === 'all' && !searchQuery && promoBanner.active && (
-            <section style={{ padding: '0 20px 14px' }}>
-              <div style={{
-                backgroundColor: '#E8F5F5',
-                borderRadius: '22px',
-                padding: '18px 20px',
-                position: 'relative',
-                overflow: 'hidden',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                border: '1px solid rgba(74, 183, 182, 0.25)',
-              }}>
-                <div style={{ zIndex: 2, maxWidth: '60%' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                    <AnimatedSparkle size={14} color="#4AB7B6" />
-                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#4AB7B6', letterSpacing: '1px' }}>
-                      SPECIAL
-                    </span>
-                  </div>
-                  <div style={{
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    color: '#475569',
-                    fontFamily: "'Poppins', sans-serif",
-                  }}>
-                    {promoBanner.title}
-                  </div>
-                  <div style={{
-                    fontSize: '24px',
-                    fontWeight: 800,
-                    color: '#0F172A',
-                    fontFamily: "'Poppins', sans-serif",
-                    lineHeight: 1.2,
-                    margin: '2px 0',
-                  }}>
-                    {promoBanner.discount}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#64748B', fontWeight: 500 }}>
-                    {promoBanner.subtitle}
-                  </div>
-                </div>
-
-                <div style={{
-                  position: 'absolute',
-                  right: '-10px',
-                  top: 0,
-                  bottom: 0,
-                  width: '160px',
-                  backgroundImage: `url(${promoBanner.imageUrl})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  borderTopRightRadius: '22px',
-                  borderBottomRightRadius: '22px',
-                  maskImage: 'linear-gradient(to right, transparent 0%, black 35%)',
-                  WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 35%)',
-                }} />
-              </div>
-            </section>
+          {/* Banner carousel (live from RTDB, managed in the admin app) */}
+          {selectedCategory === 'all' && !searchQuery && (
+            <BannerCarousel
+              banners={liveBanners}
+              onSelectTarget={(target) => {
+                if (categoryItems.some((c) => c.id === target)) setSelectedCategory(target);
+              }}
+            />
           )}
 
           {/* Categories Squircles Carousel */}

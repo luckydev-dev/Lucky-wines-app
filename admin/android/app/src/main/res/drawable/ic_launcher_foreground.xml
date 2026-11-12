@@ -1,0 +1,38 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Center Managerial Glow -->
+    <path
+        android:fillColor="#25D97706"
+        android:pathData="M54,54m-34,0a34,34 0 1,0 68,0a34,34 0 1,0 -68,0" />
+    <!-- Authority Shield (Store Manager Emblem) -->
+    <path
+        android:fillColor="#2A0B14"
+        android:strokeColor="#F59E0B"
+        android:strokeWidth="2.5"
+        android:pathData="M54,22L32,31v20c0,16 9.5,30.5 22,34c12.5,-3.5 22,-18 22,-34V31L54,22z" />
+    <!-- Inner Golden Wine Bottle -->
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M51,33h6v4l2.5,4v22c0,1.5 -1.2,2.8 -2.8,2.8h-5.4c-1.5,0 -2.8,-1.2 -2.8,-2.8V41l2.5,-4v-4z" />
+    <path
+        android:fillColor="#FEF3C7"
+        android:pathData="M50.5,31h7v2.5h-7z" />
+    <!-- Managerial Checkmark & Star of Quality -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M48,53l4,4l9,-9l1.5,1.5l-10.5,10.5l-5.5,-5.5z" />
+    <!-- "ADMIN" Ribbon Banner across base -->
+    <path
+        android:fillColor="#D97706"
+        android:pathData="M34,74h40l-4,6h-32z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M45,78h2v-3h-2zM53,78h2v-3h-2zM61,78h2v-3h-2z" />
+    <!-- Authority Crown Star -->
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M54,16l2.2,5.5l5.8,0.5l-4.4,3.8l1.3,5.7l-4.9,-3l-4.9,3l1.3,-5.7l-4.4,-3.8l5.8,-0.5z" />
+</vector>

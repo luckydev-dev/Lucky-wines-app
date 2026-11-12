@@ -14,6 +14,7 @@ import {
   updateOrderPaymentStatusInRTDB,
   subscribeToProducts,
   adminSignIn,
+  adminRegister,
   adminSignOut,
   subscribeToAdminSession,
   updateProductInRTDB,
@@ -45,6 +46,7 @@ import {
 
 import { OrderAlerts, MyDevices } from './DeviceAlerts';
 import { CategoriesManager, CustomersList } from './Manage';
+import { BannersManager } from './BannersManager';
 import { unregisterThisDevice } from './alerts';
 
 type AdminNavTab = 'orders' | 'products' | 'analytics' | 'settings';
@@ -1004,79 +1006,8 @@ function HyperMartAdmin() {
 
             <CustomersList orders={orders} />
 
-            {/* Section A: Customer App Promo Banner Editor */}
-            <div style={{
-              backgroundColor: '#FFFFFF',
-              borderRadius: '18px',
-              padding: '18px',
-              border: '1px solid #E8F2F2',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '14px', fontWeight: 800, color: '#1E293B' }}>
-                  Homepage Promo Banner
-                </span>
-                <span style={{ fontSize: '11px', color: '#4AB7B6', fontWeight: 700 }}>
-                  Updates User App Instantly
-                </span>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>
-                  Banner Title
-                </label>
-                <input
-                  type="text"
-                  value={promoBanner.title}
-                  onChange={(e) => setPromoBanner({ ...promoBanner, title: e.target.value })}
-                  style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>
-                    Discount Tag
-                  </label>
-                  <input
-                    type="text"
-                    value={promoBanner.discount}
-                    onChange={(e) => setPromoBanner({ ...promoBanner, discount: e.target.value })}
-                    style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>
-                    Banner Subtitle
-                  </label>
-                  <input
-                    type="text"
-                    value={promoBanner.subtitle}
-                    onChange={(e) => setPromoBanner({ ...promoBanner, subtitle: e.target.value })}
-                    style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
-                  />
-                </div>
-              </div>
-
-              <button
-                onClick={handleSavePromoBanner}
-                style={{
-                  backgroundColor: '#FDAA5D',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: '10px',
-                  padding: '10px',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                Save Promo Banner
-              </button>
-            </div>
+            {/* Section A: Customer App Promo Banners Carousel Manager */}
+            <BannersManager categories={categoryOptions} showToast={showToast} />
 
             {/* Section B: Store & Payment Configuration */}
             <div style={{
@@ -1470,27 +1401,57 @@ function HyperMartAdmin() {
 }
 
 function AdminLogin() {
+  const [mode, setMode] = useState<'signin' | 'register'>('signin');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
-    setBusy(true);
     setError('');
-    try {
-      await adminSignIn(email, password);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '';
-      setError(
-        msg === 'NOT_ADMIN'
-          ? 'This account is not an admin of the store.'
-          : 'Sign-in failed. Check your email and password.'
-      );
-    } finally {
-      setBusy(false);
+
+    if (mode === 'register') {
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match.');
+        return;
+      }
+      setBusy(true);
+      try {
+        await adminRegister(email, password, name);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        if (msg.includes('email-already-in-use')) {
+          setError('An account with this email already exists. Try signing in.');
+        } else if (msg.includes('invalid-email')) {
+          setError('Please enter a valid email address.');
+        } else {
+          setError('Could not create admin account. Please try again.');
+        }
+      } finally {
+        setBusy(false);
+      }
+    } else {
+      setBusy(true);
+      try {
+        await adminSignIn(email, password);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        setError(
+          msg === 'NOT_ADMIN'
+            ? 'This account is not authorized as an admin yet.'
+            : 'Sign-in failed. Check your email and password.'
+        );
+      } finally {
+        setBusy(false);
+      }
     }
   };
 
@@ -1498,18 +1459,19 @@ function AdminLogin() {
     width: '100%',
     padding: '12px 14px',
     borderRadius: '12px',
-    border: '1px solid #CBD5E1',
+    border: '1.5px solid #EFE7E1',
     backgroundColor: '#FFFFFF',
     fontSize: '14px',
-    color: '#1E293B',
+    color: '#15080C',
     outline: 'none',
     boxSizing: 'border-box',
+    fontFamily: "'DM Sans', sans-serif",
   };
 
   return (
     <div style={{
       minHeight: '100vh',
-      backgroundColor: '#F4F9F9',
+      backgroundColor: '#15080C',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -1520,28 +1482,94 @@ function AdminLogin() {
         onSubmit={submit}
         style={{
           width: '100%',
-          maxWidth: '360px',
-          backgroundColor: '#FFFFFF',
-          borderRadius: '20px',
-          padding: '24px',
-          border: '1px solid #E8F2F2',
-          boxShadow: '0 8px 24px rgba(74, 183, 182, 0.10)',
+          maxWidth: '380px',
+          backgroundColor: '#220D14',
+          borderRadius: '24px',
+          padding: '28px',
+          border: '1px solid rgba(212, 175, 55, 0.25)',
+          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.45)',
           display: 'flex',
           flexDirection: 'column',
           gap: '14px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <AnimatedBottle size={28} color="#4AB7B6" glow />
-          <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#4AB7B6', margin: 0, fontFamily: "'Poppins', sans-serif" }}>
-            Lucky<span style={{ color: '#FDAA5D' }}>Admin</span>
-          </h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <AnimatedBottle size={32} color="#D4AF37" glow />
+          <div>
+            <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#D4AF37', margin: 0, fontFamily: "'Poppins', sans-serif", letterSpacing: '0.5px' }}>
+              Lucky<span style={{ color: '#E5C454' }}>Admin</span>
+            </h1>
+            <span style={{ fontSize: '11px', color: '#D97706', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' }}>
+              Store Management Portal
+            </span>
+          </div>
         </div>
-        <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>Sign in to manage the store.</p>
+
+        {/* Toggle Mode: Sign In vs Register */}
+        <div style={{
+          display: 'flex',
+          backgroundColor: '#15080C',
+          borderRadius: '12px',
+          padding: '4px',
+          marginTop: '4px',
+        }}>
+          <button
+            type="button"
+            onClick={() => { setMode('signin'); setError(''); }}
+            style={{
+              flex: 1,
+              padding: '8px',
+              borderRadius: '9px',
+              border: 'none',
+              backgroundColor: mode === 'signin' ? '#720D2B' : 'transparent',
+              color: mode === 'signin' ? '#FFFFFF' : '#A88C95',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              transition: 'all 150ms ease',
+            }}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode('register'); setError(''); }}
+            style={{
+              flex: 1,
+              padding: '8px',
+              borderRadius: '9px',
+              border: 'none',
+              backgroundColor: mode === 'register' ? '#720D2B' : 'transparent',
+              color: mode === 'register' ? '#FFFFFF' : '#A88C95',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              transition: 'all 150ms ease',
+            }}
+          >
+            Register Admin
+          </button>
+        </div>
+
+        <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#C5B4BC' }}>
+          {mode === 'signin' ? 'Sign in to access your store orders and catalog.' : 'Register a new administrator account for this shop.'}
+        </p>
+
+        {mode === 'register' && (
+          <input
+            type="text"
+            placeholder="Manager / Admin Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            style={field}
+          />
+        )}
+
         <input
           type="email"
           autoComplete="username"
-          placeholder="Admin email"
+          placeholder="Admin Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -1549,16 +1577,32 @@ function AdminLogin() {
         />
         <input
           type="password"
-          autoComplete="current-password"
+          autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
           style={field}
         />
-        {error && (
-          <div role="alert" style={{ fontSize: '12px', fontWeight: 600, color: '#EA7173' }}>{error}</div>
+
+        {mode === 'register' && (
+          <input
+            type="password"
+            autoComplete="new-password"
+            placeholder="Confirm Password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            style={field}
+          />
         )}
+
+        {error && (
+          <div role="alert" style={{ fontSize: '12px', fontWeight: 600, color: '#F87171', backgroundColor: '#3A141A', padding: '8px 12px', borderRadius: '8px' }}>
+            {error}
+          </div>
+        )}
+
         <button
           type="submit"
           disabled={busy}
@@ -1566,19 +1610,77 @@ function AdminLogin() {
             padding: '13px',
             borderRadius: '12px',
             border: 'none',
-            backgroundColor: '#4AB7B6',
+            backgroundColor: '#720D2B',
             color: '#FFFFFF',
             fontSize: '14px',
-            fontWeight: 700,
+            fontWeight: 800,
             cursor: busy ? 'default' : 'pointer',
             opacity: busy ? 0.7 : 1,
+            boxShadow: '0 4px 14px rgba(114, 13, 43, 0.4)',
+            marginTop: '4px',
           }}
         >
-          {busy ? 'Signing in…' : 'Sign in'}
+          {busy
+            ? mode === 'signin' ? 'Signing in…' : 'Registering…'
+            : mode === 'signin' ? 'Sign In as Manager' : 'Create Admin Account'}
         </button>
       </form>
     </div>
   );
+}
+
+class AdminErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; errorText: string }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, errorText: '' };
+  }
+  static getDerivedStateFromError(error: unknown) {
+    return { hasError: true, errorText: error instanceof Error ? error.message : String(error) };
+  }
+  componentDidCatch(error: unknown, errorInfo: unknown) {
+    console.error('Admin Dashboard caught error:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          minHeight: '100vh',
+          backgroundColor: '#15080C',
+          color: '#FDFBF9',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          textAlign: 'center',
+        }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#D4AF37', margin: '0 0 8px' }}>Store Manager Recovery</h2>
+          <p style={{ fontSize: '13px', color: '#C5B4BC', maxWidth: '320px', lineHeight: 1.5, margin: '0 0 16px' }}>
+            A temporary component error occurred. You are still signed in.
+          </p>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false, errorText: '' });
+              window.location.reload();
+            }}
+            style={{
+              padding: '12px 20px',
+              borderRadius: '12px',
+              border: 'none',
+              backgroundColor: '#720D2B',
+              color: '#FFFFFF',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Reload Dashboard
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 function AuthGate() {
@@ -1590,16 +1692,22 @@ function AuthGate() {
     return (
       <div style={{
         minHeight: '100vh',
-        backgroundColor: '#F4F9F9',
+        backgroundColor: '#15080C',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
       }}>
-        <AnimatedBottle size={40} color="#4AB7B6" glow />
+        <AnimatedBottle size={48} color="#D4AF37" glow />
       </div>
     );
   }
-  return session === 'in' ? <HyperMartAdmin /> : <AdminLogin />;
+  return session === 'in' ? (
+    <AdminErrorBoundary>
+      <HyperMartAdmin />
+    </AdminErrorBoundary>
+  ) : (
+    <AdminLogin />
+  );
 }
 
 export default function App() {

@@ -48,6 +48,8 @@ export interface Banner {
   active: boolean;
   title?: string;
   subtitle?: string;
+  startDate?: string; // ISO date string or YYYY-MM-DD
+  endDate?: string;   // ISO date string or YYYY-MM-DD
 }
 
 export interface Address {

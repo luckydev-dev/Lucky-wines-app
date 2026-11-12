@@ -1,63 +1,103 @@
 export const THEME_TOKENS = {
   colors: {
-    // HyperMart Teal Primary
+    // Deep Burgundy / Wine Primary Palette
+    wine: {
+      950: '#1F040A',
+      900: '#3D0717', // Rich velvet burgundy
+      800: '#580A20',
+      700: '#720D2B', // Classic bordeaux
+      600: '#8C1438', // Brand Cabernet Red
+      500: '#A81C45',
+      400: '#C0345F',
+      300: '#D95E83',
+      200: '#EDA0B8',
+      100: '#F8D5E1',
+      50: '#FDF2F5',
+    },
+    // Warm Champagne Gold Accent Palette
+    gold: {
+      900: '#543806',
+      800: '#7A520B',
+      700: '#A16D11',
+      600: '#C48615',
+      500: '#D4AF37', // Brand Warm Gold
+      400: '#E5C454',
+      300: '#F0D87E',
+      200: '#F8E8B2',
+      100: '#FCF6DC',
+      50: '#FEFBF2',
+    },
+    // Admin Store Manager Accent (Deep Bronze / Amber)
+    adminAccent: {
+      800: '#78350F',
+      700: '#92400E',
+      600: '#B45309',
+      500: '#D97706',
+      400: '#F59E0B',
+      100: '#FEF3C7',
+      50: '#FFFBEB',
+    },
+    // Backward-compatible aliases mapped to the wine & gold palette
     teal: {
-      900: '#1B4747',
-      800: '#235D5D',
-      700: '#2C7372',
-      600: '#389594',
-      500: '#4AB7B6', // Brand HyperMart Teal
-      400: '#6CC5C4',
-      300: '#94D5D4',
-      200: '#BFE7E6',
-      100: '#E4F6F5',
-      50: '#F2FAF9',
+      900: '#3D0717',
+      800: '#580A20',
+      700: '#720D2B',
+      600: '#8C1438',
+      500: '#720D2B', // Wine brand primary replaces teal
+      400: '#8C1438',
+      300: '#C0345F',
+      200: '#EDA0B8',
+      100: '#F8D5E1',
+      50: '#FDF2F5',
     },
-    // HyperMart Tangerine / Orange Accent
     orange: {
-      900: '#6B3805',
-      700: '#A85E14',
-      500: '#FDAA5D', // Brand HyperMart Tangerine
-      400: '#FEB978',
-      300: '#FEC997',
-      200: '#FFDDBB',
-      100: '#FFF0E2',
-      50: '#FFF8F1',
+      900: '#543806',
+      700: '#A16D11',
+      500: '#D4AF37', // Gold accent replaces orange
+      400: '#E5C454',
+      300: '#F0D87E',
+      200: '#F8E8B2',
+      100: '#FCF6DC',
+      50: '#FEFBF2',
     },
-    // HyperMart Coral / Discount Tag Red
     coral: {
-      500: '#EA7173',
-      400: '#EE8B8C',
-      100: '#FDECEC',
+      500: '#A81C45',
+      400: '#C0345F',
+      100: '#FDF2F5',
     },
-    // Surfaces & Backgrounds (HyperMart Clean White & Soft Mint)
+    // Surfaces & Backgrounds (Warm off-white and near-black dark surfaces)
     surface: {
-      page: '#F4F9F9',
+      page: '#FDFBF9',        // Warm off-white parchment
       card: '#FFFFFF',
-      subtle: '#EEF7F7',
-      border: '#E2ECEC',
+      subtle: '#F8F3EE',      // Soft warm cream
+      border: '#EFE7E1',      // Delicate warm border
+      darkPage: '#15080C',    // Near-black velvet burgundy
+      darkCard: '#220D14',    // Deep burgundy card
+      darkBorder: '#3B1723',  // Dark wine border
     },
-    // Typography
+    // High-contrast Typography (WCAG AA & AAA compliant)
     text: {
-      primary: '#1E293B',
-      secondary: '#64748B',
-      muted: '#94A3B8',
-      teal: '#4AB7B6',
-      orange: '#FDAA5D',
-      coral: '#EA7173',
+      primary: '#1A1114',     // Deep near-black contrast on warm white
+      secondary: '#66555C',   // Refined charcoal slate
+      muted: '#99858D',       // Soft muted mauve
+      wine: '#720D2B',        // Burgundy link / title
+      gold: '#C48615',        // Gold accent text
       white: '#FFFFFF',
+      darkPrimary: '#FDF8F5',
+      darkSecondary: '#D1BAC3',
+      darkMuted: '#9E848F',
     },
-    // Status
+    // Order & Payment Status
     status: {
-      delivered: '#10B981',
+      delivered: '#059669',
       deliveredBg: '#ECFDF5',
-      processing: '#3B82F6',
+      processing: '#2563EB',
       processingBg: '#EFF6FF',
-      pending: '#F59E0B',
-      pendingBg: '#FFFBEB',
-      cancelled: '#EF4444',
+      pending: '#D97706',
+      pendingBg: '#FEF3C7',
+      cancelled: '#DC2626',
       cancelledBg: '#FEF2F2',
-    }
+    },
   },
   radius: {
     xs: '6px',
@@ -68,8 +108,12 @@ export const THEME_TOKENS = {
     full: '9999px',
   },
   shadow: {
-    card: '0 4px 18px rgba(74, 183, 182, 0.08)',
-    float: '0 8px 26px rgba(253, 170, 93, 0.4)',
-    elevated: '0 8px 24px rgba(0, 0, 0, 0.06)',
-  }
+    card: '0 4px 18px rgba(61, 7, 23, 0.07)',
+    float: '0 8px 24px rgba(212, 175, 55, 0.35)',
+    elevated: '0 10px 28px rgba(31, 4, 10, 0.1)',
+  },
+  typography: {
+    fontDisplay: "'Poppins', serif, -apple-system, BlinkMacSystemFont, sans-serif",
+    fontBody: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+  },
 } as const;

@@ -54,10 +54,13 @@ export const LaunchGate: React.FC = () => {
 
   if (splash) {
     return (
-      <div style={overlay} role="status" aria-label="Loading Lucky Wine">
-        <AnimatedBottle size={64} color="#4AB7B6" glow />
-        <div style={{ marginTop: '14px', fontSize: '24px', fontWeight: 800, color: '#4AB7B6', fontFamily: "'Poppins', sans-serif" }}>
-          Lucky<span style={{ color: '#FDAA5D' }}>Wine</span>
+      <div style={{ ...overlay, backgroundColor: '#15080C' }} role="status" aria-label="Loading Lucky Wine">
+        <AnimatedBottle size={72} color="#D4AF37" glow />
+        <div style={{ marginTop: '16px', fontSize: '26px', fontWeight: 800, color: '#D4AF37', fontFamily: "'Poppins', sans-serif", letterSpacing: '0.5px' }}>
+          Lucky<span style={{ color: '#E5C454' }}>Wine</span>
+        </div>
+        <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: 600, color: '#A82C48', letterSpacing: '2px', textTransform: 'uppercase' }}>
+          Premium Cellar & Spirits
         </div>
       </div>
     );
@@ -67,15 +70,15 @@ export const LaunchGate: React.FC = () => {
 
   if (declined) {
     return (
-      <div style={overlay}>
+      <div style={{ ...overlay, backgroundColor: '#FDFBF9' }}>
         <div style={{ maxWidth: '320px', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#1E293B', margin: '0 0 8px' }}>Sorry, we cannot let you in</h1>
-          <p style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.5, margin: '0 0 16px' }}>
+          <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#15080C', margin: '0 0 8px' }}>Sorry, we cannot let you in</h1>
+          <p style={{ fontSize: '13px', color: '#6A565C', lineHeight: 1.5, margin: '0 0 16px' }}>
             Alcohol can only be sold to people of legal drinking age. Please come back when you are old enough.
           </p>
           <button
             onClick={() => setDeclined(false)}
-            style={{ background: 'none', border: 'none', color: '#4AB7B6', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+            style={{ background: 'none', border: 'none', color: '#720D2B', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
           >
             Go back
           </button>
@@ -85,15 +88,15 @@ export const LaunchGate: React.FC = () => {
   }
 
   return (
-    <div style={overlay} role="dialog" aria-modal="true" aria-labelledby="age-title">
+    <div style={{ ...overlay, backgroundColor: '#FDFBF9' }} role="dialog" aria-modal="true" aria-labelledby="age-title">
       <div style={{ maxWidth: '340px', width: '100%', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '14px' }}>
         <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <AnimatedBottle size={44} color="#4AB7B6" glow />
+          <AnimatedBottle size={48} color="#720D2B" glow />
         </div>
-        <h1 id="age-title" style={{ fontSize: '22px', fontWeight: 800, color: '#1E293B', margin: 0 }}>
+        <h1 id="age-title" style={{ fontSize: '22px', fontWeight: 800, color: '#15080C', margin: 0 }}>
           Are you of legal drinking age?
         </h1>
-        <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.5, margin: 0 }}>{notice}</p>
+        <p style={{ fontSize: '13px', color: '#4D3B40', lineHeight: 1.5, margin: 0 }}>{notice}</p>
         <button
           onClick={() => {
             rememberConfirmed();
@@ -103,11 +106,12 @@ export const LaunchGate: React.FC = () => {
             padding: '14px',
             borderRadius: '14px',
             border: 'none',
-            backgroundColor: '#4AB7B6',
+            backgroundColor: '#720D2B',
             color: '#FFFFFF',
             fontSize: '14px',
             fontWeight: 800,
             cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(114, 13, 43, 0.25)',
           }}
         >
           Yes, I am of legal age
@@ -117,9 +121,9 @@ export const LaunchGate: React.FC = () => {
           style={{
             padding: '12px',
             borderRadius: '14px',
-            border: '1.5px solid #E2E8F0',
+            border: '1.5px solid #EFE7E1',
             backgroundColor: '#FFFFFF',
-            color: '#64748B',
+            color: '#6A565C',
             fontSize: '13px',
             fontWeight: 700,
             cursor: 'pointer',
@@ -127,7 +131,7 @@ export const LaunchGate: React.FC = () => {
         >
           No
         </button>
-        <p style={{ fontSize: '11px', color: '#94A3B8', lineHeight: 1.5, margin: 0 }}>
+        <p style={{ fontSize: '11px', color: '#9E868E', lineHeight: 1.5, margin: 0 }}>
           Please drink responsibly. Never drink and drive. Government photo ID may be checked on delivery.
         </p>
       </div>

@@ -45,7 +45,7 @@ export const EmojiAll: React.FC<EmojiVectorProps> = ({
       }}
       {...rest}
     >
-      <circle cx="24" cy="24" r="22" fill="#E8F5F5" />
+      
       {/* Bottle */}
       <rect x="13" y="10" width="8" height="4" rx="1.5" fill="#4AB7B6" />
       <path d="M15 14v4l-3 4v16a2 2 0 002 2h6a2 2 0 002-2V22l-3-4v-4h-4z" fill="#4AB7B6" />
@@ -85,7 +85,7 @@ export const EmojiWhiskey: React.FC<EmojiVectorProps> = ({
       }}
       {...rest}
     >
-      <circle cx="24" cy="24" r="22" fill="#FEF3C7" />
+      
       {/* Heavy crystal glass tumbler */}
       <path d="M12 12h24l-3 26a3 3 0 01-3 2.5H18A3 3 0 0115 38L12 12z" fill="#B45309" fillOpacity="0.25" stroke="#D97706" strokeWidth="2" />
       {/* Amber Whiskey Liquid */}
@@ -126,7 +126,7 @@ export const EmojiBeer: React.FC<EmojiVectorProps> = ({
       }}
       {...rest}
     >
-      <circle cx="24" cy="24" r="22" fill="#EFF6FF" />
+      
       {/* Handle */}
       <path d="M28 20h7a3 3 0 013 3v10a3 3 0 01-3 3h-7" stroke="#3B82F6" strokeWidth="3" strokeLinecap="round" />
       {/* Glass Body with golden beer */}
@@ -168,7 +168,7 @@ export const EmojiWine: React.FC<EmojiVectorProps> = ({
       }}
       {...rest}
     >
-      <circle cx="24" cy="24" r="22" fill="#FDF2F8" />
+      
       {/* Bowl */}
       <path d="M14 12h20c0 9-4.5 15-10 15s-10-6-10-15z" fill="#881337" stroke="#BE185D" strokeWidth="2" />
       {/* Rich Ruby Wine Fill */}
@@ -208,7 +208,7 @@ export const EmojiVodka: React.FC<EmojiVectorProps> = ({
       }}
       {...rest}
     >
-      <circle cx="24" cy="24" r="22" fill="#F3E8FF" />
+      
       {/* Bottle Cap */}
       <rect x="21" y="8" width="6" height="3" rx="1" fill="#7C3AED" />
       {/* Tall Crystalline Bottle */}
@@ -249,7 +249,7 @@ export const EmojiRum: React.FC<EmojiVectorProps> = ({
       }}
       {...rest}
     >
-      <circle cx="24" cy="24" r="22" fill="#FFEDD5" />
+      
       {/* Rum Barrel Cask */}
       <ellipse cx="24" cy="24" rx="13" ry="15" fill="#9A3412" stroke="#EA580C" strokeWidth="2" />
       <path d="M12 17h24M12 31h24" stroke="#FDBA74" strokeWidth="2" />
@@ -287,7 +287,7 @@ export const EmojiGin: React.FC<EmojiVectorProps> = ({
       }}
       {...rest}
     >
-      <circle cx="24" cy="24" r="22" fill="#ECFDF5" />
+      
       {/* Copa balloon bowl */}
       <circle cx="24" cy="20" r="10" fill="#A7F3D0" fillOpacity="0.4" stroke="#059669" strokeWidth="2" />
       {/* Stem & foot */}
@@ -326,7 +326,7 @@ export const EmojiMixers: React.FC<EmojiVectorProps> = ({
       }}
       {...rest}
     >
-      <circle cx="24" cy="24" r="22" fill="#FFF7ED" />
+      
       {/* Beverage Can */}
       <rect x="16" y="14" width="16" height="24" rx="3" fill="#FDAA5D" stroke="#EA580C" strokeWidth="2" />
       <ellipse cx="24" cy="14" rx="8" ry="2" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1" />

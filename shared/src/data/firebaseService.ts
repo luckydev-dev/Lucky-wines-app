@@ -15,6 +15,9 @@ import {
   getAuth,
   signInAnonymously,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup,
   signOut,
   onAuthStateChanged,
 } from 'firebase/auth';
@@ -61,6 +64,91 @@ export function ensureCustomerAuth(): Promise<string> {
   }
   return customerAuthPromise;
 }
+export interface CustomerProfile {
+  name: string;
+  email: string;
+  phone?: string;
+  password?: string;
+  passwordSet?: boolean;
+  createdAt: number;
+}
+
+export interface SavedAddress {
+  id: string;
+  label: string;
+  line1: string;
+  line2?: string;
+  landmark?: string;
+  pincode: string;
+  isDefault?: boolean;
+}
+
+/** Customer sign-in via Google */
+export async function customerGoogleSignIn(): Promise<{ uid: string; name: string; email: string }> {
+  const auth = getFirebaseAuth();
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  const result = await signInWithPopup(auth, provider);
+  const user = result.user;
+  const db = getRTDB();
+  
+  // Check if profile exists, if not initialize
+  const snap = await get(ref(db, `users/${user.uid}`));
+  if (!snap.exists()) {
+    await update(ref(db, `users/${user.uid}`), {
+      name: user.displayName || 'Customer',
+      email: user.email || '',
+      createdAt: Date.now(),
+    });
+  }
+  return {
+    uid: user.uid,
+    name: user.displayName || 'Customer',
+    email: user.email || '',
+  };
+}
+
+/** Update customer profile (e.g. mobile number, password, etc) */
+export async function saveCustomerProfile(uid: string, profile: Partial<CustomerProfile>): Promise<void> {
+  const db = getRTDB();
+  await update(ref(db, `users/${uid}`), profile);
+}
+
+/** Fetch customer profile */
+export async function fetchCustomerProfile(uid: string): Promise<CustomerProfile | null> {
+  const db = getRTDB();
+  const snap = await get(ref(db, `users/${uid}`));
+  return snap.exists() ? (snap.val() as CustomerProfile) : null;
+}
+
+/** Subscribe to customer addresses */
+export function subscribeToCustomerAddresses(uid: string, onUpdate: (addresses: SavedAddress[]) => void): () => void {
+  const db = getRTDB();
+  return onValue(
+    ref(db, `users/${uid}/addresses`),
+    (snap) => {
+      if (snap.exists()) {
+        const val = snap.val();
+        onUpdate(Object.values(val));
+      } else {
+        onUpdate([]);
+      }
+    },
+    () => onUpdate([])
+  );
+}
+
+/** Save or update customer address */
+export async function saveCustomerAddress(uid: string, address: SavedAddress): Promise<void> {
+  const db = getRTDB();
+  await set(ref(db, `users/${uid}/addresses/${address.id}`), address);
+}
+
+/** Delete customer address */
+export async function deleteCustomerAddress(uid: string, addressId: string): Promise<void> {
+  const db = getRTDB();
+  await remove(ref(db, `users/${uid}/addresses/${addressId}`));
+}
 
 /** Admin app: email + password. Signs out again unless the uid exists under /admins. */
 export async function adminSignIn(email: string, password: string): Promise<void> {
@@ -71,6 +159,21 @@ export async function adminSignIn(email: string, password: string): Promise<void
     await signOut(auth);
     throw new Error('NOT_ADMIN');
   }
+  localStorage.setItem('lucky_admin_auth_cached', cred.user.uid);
+}
+
+/** Admin app: create new admin account and register under /admins in RTDB. */
+export async function adminRegister(email: string, password: string, name?: string): Promise<void> {
+  const auth = getFirebaseAuth();
+  const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  const db = getRTDB();
+  await set(ref(db, `admins/${cred.user.uid}`), {
+    email: email.trim(),
+    name: name?.trim() || 'Store Manager',
+    role: 'admin',
+    createdAt: Date.now(),
+  });
+  localStorage.setItem('lucky_admin_auth_cached', cred.user.uid);
 }
 
 export async function adminSignOut(): Promise<void> {
@@ -82,19 +185,34 @@ export function subscribeToAdminSession(onChange: (state: 'in' | 'out') => void)
   const auth = getFirebaseAuth();
   return onAuthStateChanged(auth, async (user) => {
     if (!user || user.isAnonymous) {
+      localStorage.removeItem('lucky_admin_auth_cached');
       onChange('out');
       return;
+    }
+    // Check if this UID was already verified as admin on this device
+    const cachedAdminUid = localStorage.getItem('lucky_admin_auth_cached');
+    if (cachedAdminUid === user.uid) {
+      onChange('in');
     }
     try {
       const snap = await get(ref(getRTDB(), `admins/${user.uid}`));
       if (snap.exists()) {
+        localStorage.setItem('lucky_admin_auth_cached', user.uid);
         onChange('in');
       } else {
+        // If not listed as admin, clear cache and sign out
+        localStorage.removeItem('lucky_admin_auth_cached');
         await signOut(auth);
         onChange('out');
       }
-    } catch {
-      onChange('out');
+    } catch (err) {
+      console.warn('Admin check transient error:', err);
+      // If we already cached this UID as admin, keep the session open rather than kicking out
+      if (localStorage.getItem('lucky_admin_auth_cached') === user.uid) {
+        onChange('in');
+      } else {
+        onChange('out');
+      }
     }
   });
 }
@@ -109,7 +227,14 @@ export function subscribeToStoreSettings(onUpdate: (settings: StoreSettings) => 
     const settingsRef = ref(db, 'settings');
     return onValue(settingsRef, (snapshot) => {
       if (snapshot.exists()) {
-        onUpdate(snapshot.val() as StoreSettings);
+        const val = snapshot.val();
+        onUpdate({
+          ...DEFAULT_SETTINGS,
+          ...val,
+          deliveryFee: typeof val.deliveryFee === 'number' ? val.deliveryFee : DEFAULT_SETTINGS.deliveryFee,
+          freeDeliveryAbove: typeof val.freeDeliveryAbove === 'number' ? val.freeDeliveryAbove : DEFAULT_SETTINGS.freeDeliveryAbove,
+          minOrder: typeof val.minOrder === 'number' ? val.minOrder : DEFAULT_SETTINGS.minOrder,
+        } as StoreSettings);
       } else {
         onUpdate(DEFAULT_SETTINGS as StoreSettings);
       }
@@ -126,7 +251,14 @@ export async function fetchStoreSettings(): Promise<StoreSettings> {
     const db = getRTDB();
     const snapshot = await get(ref(db, 'settings'));
     if (snapshot.exists()) {
-      return snapshot.val() as StoreSettings;
+      const val = snapshot.val();
+      return {
+        ...DEFAULT_SETTINGS,
+        ...val,
+        deliveryFee: typeof val.deliveryFee === 'number' ? val.deliveryFee : DEFAULT_SETTINGS.deliveryFee,
+        freeDeliveryAbove: typeof val.freeDeliveryAbove === 'number' ? val.freeDeliveryAbove : DEFAULT_SETTINGS.freeDeliveryAbove,
+        minOrder: typeof val.minOrder === 'number' ? val.minOrder : DEFAULT_SETTINGS.minOrder,
+      } as StoreSettings;
     }
   } catch (err) {
     console.warn('Using local default settings due to network/rules:', err);
@@ -173,7 +305,9 @@ export function subscribeToBanners(onUpdate: (banners: Banner[]) => void): () =>
     return onValue(bannersRef, (snapshot) => {
       if (snapshot.exists()) {
         const val = snapshot.val();
-        onUpdate(Object.values(val));
+        const list: Banner[] = Object.values(val);
+        list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        onUpdate(list);
       } else {
         onUpdate([]);
       }
@@ -315,9 +449,19 @@ export async function deleteProductFromRTDB(productId: string): Promise<void> {
   await remove(ref(db, `products/${productId}`));
 }
 
+export async function saveBannerInRTDB(banner: Banner): Promise<void> {
+  const db = getRTDB();
+  await set(ref(db, `banners/${banner.id}`), banner);
+}
+
 export async function updateBannerInRTDB(bannerId: string, updates: Partial<Banner>): Promise<void> {
   const db = getRTDB();
   await update(ref(db, `banners/${bannerId}`), updates);
+}
+
+export async function deleteBannerFromRTDB(bannerId: string): Promise<void> {
+  const db = getRTDB();
+  await remove(ref(db, `banners/${bannerId}`));
 }
 
 export async function updateStoreSettingsInRTDB(settings: Partial<StoreSettings>): Promise<void> {

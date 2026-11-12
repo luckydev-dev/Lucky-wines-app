@@ -11,6 +11,9 @@ echo "=========================================================="
 echo "  Lucky Wine & Liquor - Release Build & Upload (Step: ${STEP})"
 echo "=========================================================="
 
+export ANDROID_HOME="${ANDROID_HOME:-/opt/android/sdk}"
+export PATH="${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/cmdline-tools/latest/bin:${PATH}"
+
 # 0. Ensure Keystores are restored or generated
 # Passwords for NEW keystores are random and only ever written to the git-ignored keystores/keystore.properties.
 # BACK UP the keystores/ folder - a regenerated key cannot update an installed app.

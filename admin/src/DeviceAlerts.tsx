@@ -67,14 +67,15 @@ export const OrderAlerts: React.FC<AlertsProps> = ({ orders, onOpenOrder }) => {
   // If the owner removes this phone from "My devices" (on another phone) sign out here too
   useEffect(() => {
     let registeredOnce = false;
-    const t = window.setTimeout(() => {
-      registeredOnce = true;
-    }, 6000);
     const unsub = subscribeToMyDevice(getDeviceId(), (exists) => {
-      if (!exists && registeredOnce) void adminSignOut();
+      if (exists) {
+        registeredOnce = true;
+      } else if (registeredOnce) {
+        // Only trigger sign out if this device actually existed and was explicitly deleted
+        void adminSignOut();
+      }
     });
     return () => {
-      window.clearTimeout(t);
       unsub();
     };
   }, []);

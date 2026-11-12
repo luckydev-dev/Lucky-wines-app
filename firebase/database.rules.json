@@ -4,9 +4,22 @@
     ".write": false,
     "admins": {
       "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
+        ".read": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
+        ".write": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
+        "email": {
+          ".validate": "newData.isString()"
+        },
+        "name": {
+          ".validate": "newData.isString()"
+        },
+        "role": {
+          ".validate": "newData.isString()"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
         "devices": {
-          ".write": "auth != null && auth.uid === $uid && root.child('admins').child($uid).exists()"
+          ".write": "auth != null && auth.uid === $uid"
         }
       }
     },
@@ -104,18 +117,86 @@
         "order",
         "active"
       ],
-      ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+      ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
+      "$bannerId": {
+        ".validate": "newData.hasChildren(['id', 'image', 'active'])",
+        "id": {
+          ".validate": "newData.isString() && newData.val() === $bannerId"
+        },
+        "image": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "target": {
+          ".validate": "newData.isString() && newData.val().length <= 100"
+        },
+        "order": {
+          ".validate": "newData.isNumber()"
+        },
+        "active": {
+          ".validate": "newData.isBoolean()"
+        },
+        "title": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "subtitle": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "startDate": {
+          ".validate": "newData.isString() && newData.val().length <= 30"
+        },
+        "endDate": {
+          ".validate": "newData.isString() && newData.val().length <= 30"
+        }
+      }
     },
     "users": {
       ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
       "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
+        ".read": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
         ".write": "auth != null && auth.uid === $uid",
         "name": {
           ".validate": "newData.isString() && newData.val().length <= 100"
         },
         "phone": {
           ".validate": "newData.isString() && newData.val().length <= 20"
+        },
+        "email": {
+          ".validate": "newData.isString() && newData.val().length <= 100"
+        },
+        "password": {
+          ".validate": "newData.isString() && newData.val().length <= 100"
+        },
+        "passwordSet": {
+          ".validate": "newData.isBoolean()"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "addresses": {
+          "$addressId": {
+            ".validate": "newData.hasChildren(['id', 'label', 'line1', 'pincode'])",
+            "id": {
+              ".validate": "newData.isString()"
+            },
+            "label": {
+              ".validate": "newData.isString() && newData.val().length <= 50"
+            },
+            "line1": {
+              ".validate": "newData.isString() && newData.val().length <= 300"
+            },
+            "line2": {
+              ".validate": "newData.isString() && newData.val().length <= 300"
+            },
+            "landmark": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "pincode": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9]{6}$/)"
+            },
+            "isDefault": {
+              ".validate": "newData.isBoolean()"
+            }
+          }
         }
       }
     },

@@ -42,6 +42,9 @@ import {
   AnimatedSparkle,
 } from '@lucky/shared';
 
+import { OrderAlerts, MyDevices } from './DeviceAlerts';
+import { unregisterThisDevice } from './alerts';
+
 type AdminNavTab = 'orders' | 'products' | 'analytics' | 'settings';
 
 function HyperMartAdmin() {
@@ -353,6 +356,22 @@ function HyperMartAdmin() {
     return true;
   });
 
+  // Banner / notification tap: show the Orders tab and scroll to that order
+  const openOrder = (orderId: string) => {
+    setActiveTab('orders');
+    setOrderFilter('all');
+    window.setTimeout(() => {
+      const el = document.getElementById(`order-${orderId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.animate(
+          [{ boxShadow: '0 0 0 3px #4AB7B6' }, { boxShadow: '0 0 0 0 rgba(74,183,182,0)' }],
+          { duration: 1800, easing: 'ease-out' }
+        );
+      }
+    }, 250);
+  };
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -363,6 +382,7 @@ function HyperMartAdmin() {
       paddingBottom: '88px',
       boxSizing: 'border-box',
     }}>
+      <OrderAlerts orders={orders} onOpenOrder={openOrder} />
       {/* 1. Header with Compact Safe Area Padding (Just 10-12px) */}
       <header
         className="app-header-safe"
@@ -402,7 +422,7 @@ function HyperMartAdmin() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <button
-          onClick={() => { void adminSignOut(); }}
+          onClick={async () => { await unregisterThisDevice(); await adminSignOut(); }}
           aria-label="Sign out"
           style={{
             backgroundColor: 'transparent',
@@ -503,6 +523,7 @@ function HyperMartAdmin() {
               filteredOrders.map((order) => (
                 <div
                   key={order.id}
+                  id={`order-${order.id}`}
                   style={{
                     backgroundColor: '#FFFFFF',
                     borderRadius: '18px',
@@ -965,6 +986,8 @@ function HyperMartAdmin() {
             <h3 style={{ fontSize: '16px', fontWeight: 800, margin: 0, color: '#1E293B', fontFamily: "'Poppins', sans-serif" }}>
               Customer App &amp; Store Controls
             </h3>
+
+            <MyDevices showToast={showToast} />
 
             {/* Section A: Customer App Promo Banner Editor */}
             <div style={{

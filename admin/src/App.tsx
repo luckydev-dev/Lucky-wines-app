@@ -44,8 +44,10 @@ import {
 } from '@lucky/shared';
 
 import { OrderAlerts, MyDevices } from './DeviceAlerts';
-import { CategoriesManager, CustomersList } from './Manage';
+import { CategoriesManager, CustomersList, BulkEdit } from './Manage';
 import { unregisterThisDevice } from './alerts';
+
+const LOW_STOCK_LIMIT = 5;
 
 type AdminNavTab = 'orders' | 'products' | 'analytics' | 'settings';
 
@@ -57,6 +59,8 @@ function HyperMartAdmin() {
   const [categoryOptions, setCategoryOptions] = useState<{ id: string; name: string }[]>([]);
   const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'active' | 'delivered'>('all');
   const [pincodeText, setPincodeText] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  const [stockOnly, setStockOnly] = useState(false);
   
   // Store Settings & Banners (Editable from Admin)
   const [storeSettings, setStoreSettings] = useState<StoreSettings>({
@@ -283,6 +287,26 @@ function HyperMartAdmin() {
       }
     }
     setIsProductModalOpen(false);
+  };
+
+  const handleDuplicateProduct = async (p: Product) => {
+    const now = Date.now();
+    const copy: Product = { ...p, id: `prod_${now.toString(36)}`, name: `${p.name} (copy)`, visible: false, featured: false, createdAt: now, updatedAt: now };
+    try {
+      await addProductToRTDB(copy);
+      showToast('Duplicated. The copy is hidden until you edit and show it.', 'success');
+    } catch (err) {
+      console.error('Duplicate failed:', err);
+      showToast('Could not duplicate the product.', 'error');
+    }
+  };
+
+  const handleProductFlag = async (p: Product, flag: 'visible' | 'featured') => {
+    try {
+      await updateProductInRTDB(p.id, { [flag]: !p[flag] });
+    } catch {
+      showToast('Could not update the product.', 'error');
+    }
   };
 
   const handleDeleteProduct = async (productId: string) => {
@@ -572,7 +596,12 @@ function HyperMartAdmin() {
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <IconMapPin size={14} color="#64748B" />
-                      <span>{order.address.line1}, {order.address.pincode}</span>
+                      <a
+                        href={`geo:0,0?q=${encodeURIComponent([order.address.line1, order.address.pincode].filter(Boolean).join(', '))}`}
+                        style={{ color: '#475569', textDecoration: 'underline' }}
+                      >
+                        {order.address.line1}, {order.address.pincode}
+                      </a>
                     </div>
                     <a
                       href={`tel:${order.userPhone}`}
@@ -783,8 +812,42 @@ function HyperMartAdmin() {
               </button>
             </div>
 
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                aria-label="Search products"
+                placeholder="Search name or brand"
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+                style={{ flex: 1, minWidth: 0, padding: '9px 12px', borderRadius: '12px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
+              />
+              <button
+                onClick={() => setStockOnly(!stockOnly)}
+                style={{
+                  padding: '9px 12px',
+                  borderRadius: '12px',
+                  border: `1.5px solid ${stockOnly ? '#EA7173' : '#CBD5E1'}`,
+                  backgroundColor: stockOnly ? '#FDECEC' : '#FFFFFF',
+                  color: stockOnly ? '#B91C1C' : '#64748B',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                Low stock
+              </button>
+            </div>
+
+            <BulkEdit products={products} categories={categoryOptions} showToast={showToast} />
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {products.map((p) => (
+              {products
+                .filter((p) => !stockOnly || p.stock <= LOW_STOCK_LIMIT)
+                .filter((p) => {
+                  const q = productSearch.trim().toLowerCase();
+                  return !q || p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q);
+                })
+                .map((p) => (
                 <div
                   key={p.id}
                   style={{
@@ -795,6 +858,8 @@ function HyperMartAdmin() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '8px',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -811,7 +876,7 @@ function HyperMartAdmin() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                     <button
                       onClick={() => handleToggleProductStock(p)}
                       style={{
@@ -828,6 +893,27 @@ function HyperMartAdmin() {
                       {p.stock > 0 ? 'In Stock' : 'Out'}
                     </button>
 
+                    <button
+                      onClick={() => handleProductFlag(p, 'visible')}
+                      aria-label={p.visible ? 'Hide from customers' : 'Show to customers'}
+                      style={{ background: 'none', border: '1px solid #CBD5E1', borderRadius: '8px', padding: '6px 8px', fontSize: '10px', fontWeight: 700, cursor: 'pointer', color: p.visible ? '#2C7372' : '#94A3B8' }}
+                    >
+                      {p.visible ? 'Shown' : 'Hidden'}
+                    </button>
+                    <button
+                      onClick={() => handleProductFlag(p, 'featured')}
+                      aria-label="Toggle featured"
+                      style={{ background: 'none', border: '1px solid #CBD5E1', borderRadius: '8px', padding: '6px 8px', fontSize: '10px', fontWeight: 700, cursor: 'pointer', color: p.featured ? '#B45309' : '#94A3B8' }}
+                    >
+                      {p.featured ? '★ Featured' : '☆'}
+                    </button>
+                    <button
+                      onClick={() => handleDuplicateProduct(p)}
+                      aria-label="Duplicate product"
+                      style={{ background: 'none', border: '1px solid #CBD5E1', borderRadius: '8px', padding: '6px 8px', fontSize: '10px', fontWeight: 700, cursor: 'pointer', color: '#64748B' }}
+                    >
+                      Copy
+                    </button>
                     <button
                       onClick={() => openEditProductModal(p)}
                       aria-label="Edit product"
@@ -874,6 +960,30 @@ function HyperMartAdmin() {
             <h3 style={{ fontSize: '16px', fontWeight: 800, margin: 0, color: '#1E293B', fontFamily: "'Poppins', sans-serif" }}>
               Store Sales &amp; Metrics
             </h3>
+
+            {(() => {
+              const out = products.filter((p) => p.stock === 0).length;
+              const low = products.filter((p) => p.stock > 0 && p.stock <= LOW_STOCK_LIMIT).length;
+              if (out + low === 0) return null;
+              return (
+                <button
+                  onClick={() => { setActiveTab('products'); setProductSearch(''); setStockOnly(true); }}
+                  style={{
+                    textAlign: 'left',
+                    padding: '10px 14px',
+                    borderRadius: '14px',
+                    border: '1px solid #FED7AA',
+                    backgroundColor: '#FFF7ED',
+                    color: '#9A3412',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Low stock: {low} running low (≤ {LOW_STOCK_LIMIT}), {out} out of stock — tap to review
+                </button>
+              );
+            })()}
 
             {/* Metric KPI Cards (Only displayed here!) */}
             <div style={{

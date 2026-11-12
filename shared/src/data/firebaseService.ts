@@ -310,6 +310,20 @@ export async function updateProductInRTDB(productId: string, updates: Partial<Pr
   });
 }
 
+/** Admin: change several products at once (one multi-path write, so it all succeeds or all fails). */
+export async function bulkUpdateProducts(changes: Record<string, Partial<Product>>): Promise<void> {
+  const now = Date.now();
+  const updates: Record<string, unknown> = {};
+  for (const [id, fields] of Object.entries(changes)) {
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined) updates[`products/${id}/${key}`] = value;
+    }
+    updates[`products/${id}/updatedAt`] = now;
+  }
+  if (Object.keys(updates).length === 0) return;
+  await update(ref(getRTDB()), updates);
+}
+
 export async function deleteProductFromRTDB(productId: string): Promise<void> {
   const db = getRTDB();
   await remove(ref(db, `products/${productId}`));

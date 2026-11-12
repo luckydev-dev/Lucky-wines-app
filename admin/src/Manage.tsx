@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  bulkUpdateProducts,
   deleteCategoryFromRTDB,
   saveCategoryInRTDB,
   subscribeToCategories,
   type Category,
   type Order,
+  type Product,
 } from '@lucky/shared';
 
 type Toast = (m: string, t?: 'success' | 'error' | 'warning' | 'info') => void;
@@ -268,6 +270,115 @@ export const CustomersList: React.FC<{ orders: Order[] }> = ({ orders }) => {
           </div>
         </div>
       ))}
+    </div>
+  );
+};
+
+/** Change prices or stock for a whole category (or the whole shop) in one go. */
+export const BulkEdit: React.FC<{ products: Product[]; categories: { id: string; name: string }[]; showToast: Toast }> = ({
+  products,
+  categories,
+  showToast,
+}) => {
+  const [scope, setScope] = useState('all');
+  const [mode, setMode] = useState<'pricePct' | 'stockSet' | 'stockAdd'>('pricePct');
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const targets = products.filter((p) => scope === 'all' || p.categoryId === scope);
+
+  const apply = async () => {
+    const n = Number(value);
+    if (!value.trim() || !Number.isFinite(n)) {
+      showToast('Enter a number first', 'warning');
+      return;
+    }
+    if (mode === 'pricePct' && (n <= -90 || n > 200)) {
+      showToast('Price change must be between -90% and +200%', 'warning');
+      return;
+    }
+    if (mode === 'stockSet' && (n < 0 || n > 100000)) {
+      showToast('Stock must be 0 or more', 'warning');
+      return;
+    }
+    if (targets.length === 0) {
+      showToast('No products in this selection', 'warning');
+      return;
+    }
+    const label =
+      mode === 'pricePct' ? `change price by ${n}%` : mode === 'stockSet' ? `set stock to ${n}` : `add ${n} to stock`;
+    if (!window.confirm(`${label} for ${targets.length} product${targets.length === 1 ? '' : 's'}?`)) return;
+
+    const changes: Record<string, Partial<Product>> = {};
+    for (const p of targets) {
+      if (mode === 'pricePct') {
+        const price = Math.max(1, Math.round(p.price * (1 + n / 100)));
+        changes[p.id] = { price, mrp: Math.max(p.mrp, price) };
+      } else if (mode === 'stockSet') {
+        changes[p.id] = { stock: Math.round(n) };
+      } else {
+        changes[p.id] = { stock: Math.max(0, p.stock + Math.round(n)) };
+      }
+    }
+    setBusy(true);
+    try {
+      await bulkUpdateProducts(changes);
+      showToast(`Updated ${targets.length} products`, 'success');
+      setValue('');
+    } catch {
+      showToast('Bulk update failed. Nothing was changed.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sel: React.CSSProperties = { ...input, flex: 'none', backgroundColor: '#FFFFFF' };
+  return (
+    <div style={card}>
+      <span style={{ fontSize: '14px', fontWeight: 800, color: '#1E293B' }}>Bulk price &amp; stock edit</span>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <select aria-label="Which products" style={sel} value={scope} onChange={(e) => setScope(e.target.value)}>
+          <option value="all">All products ({products.length})</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <select aria-label="What to change" style={sel} value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
+          <option value="pricePct">Change price by %</option>
+          <option value="stockSet">Set stock to</option>
+          <option value="stockAdd">Add to stock</option>
+        </select>
+        <input
+          aria-label="Amount"
+          style={{ ...input, flex: '1 1 80px' }}
+          inputMode="decimal"
+          placeholder={mode === 'pricePct' ? 'e.g. 5 or -10' : 'e.g. 20'}
+          value={value}
+          onChange={(e) => setValue(e.target.value.replace(/[^0-9.\-]/g, ''))}
+        />
+        <button
+          onClick={apply}
+          disabled={busy}
+          style={{
+            padding: '9px 14px',
+            borderRadius: '10px',
+            border: 'none',
+            backgroundColor: '#4AB7B6',
+            color: '#FFFFFF',
+            fontSize: '12px',
+            fontWeight: 800,
+            cursor: busy ? 'default' : 'pointer',
+            opacity: busy ? 0.7 : 1,
+          }}
+        >
+          {busy ? 'Applying…' : 'Apply'}
+        </button>
+      </div>
+      <span style={{ fontSize: '11px', color: '#64748B' }}>
+        Prices are rounded to whole rupees. MRP is raised automatically if the new price would be above it.
+      </span>
     </div>
   );
 };

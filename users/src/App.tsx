@@ -21,6 +21,10 @@ import {
   createOrderInRTDB,
   subscribeToSingleOrder,
   subscribeToMyOrders,
+  subscribeToMyProfile,
+  saveMyProfile,
+  saveMyAddress,
+  type Address,
   ensureCustomerAuth,
   cancelMyOrder,
   IconMapPin,
@@ -50,6 +54,7 @@ import {
 } from '@lucky/shared';
 import { UpiPaymentSheet } from './UpiPaymentSheet';
 import { BannerCarousel } from './Banners';
+import { SavedAddresses } from './Addresses';
 import { FilterBar, applyFilters, DEFAULT_FILTERS, type CatalogFilters } from './Filters';
 import { LaunchGate, OfflineBanner } from './Launch';
 
@@ -263,6 +268,10 @@ function HyperMartStorefront() {
   const [pincode, setPincode] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'cod'>('upi');
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const [saveAddress, setSaveAddress] = useState(true);
+  const profilePrefilled = useRef(false);
   const [paymentOrder, setPaymentOrder] = useState<Order | null>(null);
   const [ageConsent, setAgeConsent] = useState(false);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
@@ -364,7 +373,27 @@ function HyperMartStorefront() {
     let unsub: () => void = () => {};
     ensureCustomerAuth()
       .then((uid) => {
-        if (!cancelled) unsub = subscribeToMyOrders(uid, setMyOrders);
+        if (cancelled) return;
+        const unsubOrders = subscribeToMyOrders(uid, setMyOrders);
+        const unsubProfile = subscribeToMyProfile(uid, (profile) => {
+          setSavedAddresses(profile.addresses);
+          // Fill the checkout form once with what we know about this customer
+          if (!profilePrefilled.current) {
+            profilePrefilled.current = true;
+            if (profile.name) setCustomerName((cur) => cur || profile.name);
+            if (profile.phone) setContactPhone((cur) => cur || profile.phone);
+            const first = profile.addresses[0];
+            if (first) {
+              setSelectedAddressId(first.id);
+              setDeliveryAddress((cur) => cur || first.line1);
+              setPincode((cur) => cur || first.pincode);
+            }
+          }
+        });
+        unsub = () => {
+          unsubOrders();
+          unsubProfile();
+        };
       })
       .catch((err) => console.warn('Customer sign-in failed:', err));
     return () => {
@@ -505,6 +534,11 @@ function HyperMartStorefront() {
       return;
     }
 
+    // Re-use a saved address id when the form still matches it, otherwise it is a new address
+    const matched = savedAddresses.find((a) => a.id === selectedAddressId && a.line1 === address && a.pincode === pin);
+    const orderAddressId = matched ? matched.id : `addr_${Date.now().toString(36)}`;
+    const orderAddressLabel = matched ? matched.label : 'Home';
+
     setIsSubmittingOrder(true);
     // Collision-resistant id (time + random) so two customers can never overwrite each other's order
     const orderId = `LW-${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1296).toString(36).toUpperCase().padStart(2, '0')}`;
@@ -514,8 +548,8 @@ function HyperMartStorefront() {
       userName: name,
       userPhone: phone,
       address: {
-        id: 'addr_1',
-        label: 'Home',
+        id: orderAddressId,
+        label: orderAddressLabel,
         line1: address,
         pincode: pin,
       },
@@ -532,6 +566,11 @@ function HyperMartStorefront() {
 
     try {
       await createOrderInRTDB(newOrder);
+      // Best effort: a failure here must never affect the placed order
+      void saveMyProfile(name, phone).catch(() => undefined);
+      if (saveAddress) {
+        void saveMyAddress({ id: orderAddressId, label: orderAddressLabel, line1: address, pincode: pin }).catch(() => undefined);
+      }
       setCart({});
       setIsCheckoutOpen(false);
       setIsCartOpen(false);
@@ -676,6 +715,20 @@ function HyperMartStorefront() {
               </span>
             </div>
 
+            <SavedAddresses
+              addresses={savedAddresses}
+              selectedId={selectedAddressId}
+              onPick={(a) => {
+                setSelectedAddressId(a.id);
+                setDeliveryAddress(a.line1);
+                setPincode(a.pincode);
+              }}
+              onDeleted={(id) => {
+                if (id === selectedAddressId) setSelectedAddressId(null);
+              }}
+              showToast={showToast}
+            />
+
             <div>
               <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>
                 Your Name
@@ -774,6 +827,11 @@ function HyperMartStorefront() {
                 />
               </div>
             </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 600, color: '#475569', cursor: 'pointer' }}>
+              <input type="checkbox" checked={saveAddress} onChange={(e) => setSaveAddress(e.target.checked)} />
+              Save this address for next time
+            </label>
           </div>
 
           {/* 2. Payment Method Card */}

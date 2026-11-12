@@ -19,7 +19,7 @@ import {
   onAuthStateChanged,
 } from 'firebase/auth';
 import { FIREBASE_CONFIG, DEFAULT_SETTINGS } from '../config/firebase.config';
-import { Product, Category, Banner, StoreSettings, Order } from '../types';
+import { Product, Category, Banner, StoreSettings, Order, Address } from '../types';
 
 // Initialize Firebase App singleton
 export function getFirebaseApp() {
@@ -391,6 +391,45 @@ export async function submitUpiPayment(orderId: string, utr?: string): Promise<v
   const cleanUtr = utr?.trim();
   if (cleanUtr) updates[`orders/${orderId}/utr`] = cleanUtr;
   await update(ref(getRTDB()), updates);
+}
+
+// -------------------------------------------------------------
+// CUSTOMER PROFILE + SAVED ADDRESSES (users/{uid}; owner-only in the rules)
+// -------------------------------------------------------------
+
+export interface MyProfile {
+  name: string;
+  phone: string;
+  addresses: Address[];
+}
+
+export function subscribeToMyProfile(uid: string, onUpdate: (profile: MyProfile) => void): () => void {
+  return onValue(
+    ref(getRTDB(), `users/${uid}`),
+    (snap) => {
+      const v = snap.exists() ? snap.val() : {};
+      const addresses: Address[] = v.addresses ? (Object.values(v.addresses) as Address[]) : [];
+      addresses.sort((a, b) => ((b as Address & { lastUsedAt?: number }).lastUsedAt || 0) - ((a as Address & { lastUsedAt?: number }).lastUsedAt || 0));
+      onUpdate({ name: v.name || '', phone: v.phone || '', addresses });
+    },
+    () => onUpdate({ name: '', phone: '', addresses: [] })
+  );
+}
+
+export async function saveMyProfile(name: string, phone: string): Promise<void> {
+  const uid = await ensureCustomerAuth();
+  await update(ref(getRTDB(), `users/${uid}`), { name: name.trim().slice(0, 100), phone: phone.trim().slice(0, 20), createdAt: Date.now() });
+}
+
+export async function saveMyAddress(address: Address): Promise<void> {
+  const uid = await ensureCustomerAuth();
+  const clean = JSON.parse(JSON.stringify({ ...address, lastUsedAt: Date.now() }));
+  await set(ref(getRTDB(), `users/${uid}/addresses/${address.id}`), clean);
+}
+
+export async function deleteMyAddress(addressId: string): Promise<void> {
+  const uid = await ensureCustomerAuth();
+  await remove(ref(getRTDB(), `users/${uid}/addresses/${addressId}`));
 }
 
 /** Customer cancels their own order. The database only allows this while the order is still "placed". */

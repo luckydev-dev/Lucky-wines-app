@@ -126,6 +126,24 @@
         },
         "phone": {
           ".validate": "newData.isString() && newData.val().length <= 20"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "addresses": {
+          "$addressId": {
+            ".validate": "newData.hasChildren(['id', 'label', 'line1', 'pincode'])",
+            "id": { ".validate": "newData.isString() && newData.val() === $addressId" },
+            "label": { ".validate": "newData.isString() && newData.val().length <= 30" },
+            "line1": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
+            "line2": { ".validate": "newData.isString() && newData.val().length <= 200" },
+            "landmark": { ".validate": "newData.isString() && newData.val().length <= 100" },
+            "pincode": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{6}$/)" },
+            "lat": { ".validate": "newData.isNumber()" },
+            "lng": { ".validate": "newData.isNumber()" },
+            "lastUsedAt": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
         }
       }
     },

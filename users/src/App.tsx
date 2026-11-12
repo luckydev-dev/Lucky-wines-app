@@ -55,6 +55,7 @@ import {
 import { UpiPaymentSheet } from './UpiPaymentSheet';
 import { BannerCarousel } from './Banners';
 import { SavedAddresses } from './Addresses';
+import { ImageGallery, SimilarProducts, StockNote } from './ProductExtras';
 import { FilterBar, applyFilters, DEFAULT_FILTERS, type CatalogFilters } from './Filters';
 import { LaunchGate, OfflineBanner } from './Launch';
 
@@ -449,6 +450,11 @@ function HyperMartStorefront() {
         delete copy[productId];
         showToast('Item removed from cart', 'info');
       } else {
+        const stock = products.find((p) => p.id === productId)?.stock;
+        if (typeof stock === 'number' && qty > stock) {
+          showToast(stock > 0 ? `Only ${stock} available` : 'This item is out of stock', 'warning');
+          return prev;
+        }
         copy[productId] = qty;
         showToast('Cart updated', 'success');
       }
@@ -1651,32 +1657,33 @@ function HyperMartStorefront() {
       >
         {selectedProduct && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div style={{ position: 'relative', width: '100%', height: '190px', borderRadius: '18px', overflow: 'hidden' }}>
-              <img
-                src={selectedProduct.images[0]}
-                alt={selectedProduct.name}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-              <div style={{
-                position: 'absolute',
-                top: '12px',
-                right: '12px',
-                backgroundColor: 'rgba(0,0,0,0.65)',
-                backdropFilter: 'blur(8px)',
-                color: '#FFFFFF',
-                borderRadius: '9999px',
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: 700,
-              }}>
-                {selectedProduct.sizeMl}ml &bull; {selectedProduct.abv}% ABV
-              </div>
-            </div>
+            <ImageGallery
+              images={selectedProduct.images}
+              alt={selectedProduct.name}
+              overlay={
+                <div style={{
+                  position: 'absolute',
+                  top: '12px',
+                  right: '12px',
+                  backgroundColor: 'rgba(0,0,0,0.65)',
+                  color: '#FFFFFF',
+                  borderRadius: '9999px',
+                  padding: '4px 10px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                }}>
+                  {selectedProduct.sizeMl}ml &bull; {selectedProduct.abv}% ABV
+                </div>
+              }
+            />
 
             <div>
               <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '0 0 4px', color: '#1E293B', fontFamily: "'Poppins', sans-serif" }}>
                 {selectedProduct.name}
               </h3>
+              <div style={{ margin: '0 0 8px', display: 'flex' }}>
+                <StockNote stock={selectedProduct.stock} />
+              </div>
               <p style={{ fontSize: '13px', color: '#64748B', margin: '0 0 10px', lineHeight: 1.4 }}>
                 {selectedProduct.description}
               </p>
@@ -1721,27 +1728,52 @@ function HyperMartStorefront() {
                 </div>
               </div>
 
-              <button
-                onClick={() => {
-                  handleQtyChange(selectedProduct.id, (cart[selectedProduct.id] || 0) + 1);
-                  setSelectedProduct(null);
-                  setIsCartOpen(true);
-                }}
-                style={{
-                  backgroundColor: '#FDAA5D',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '12px 20px',
-                  fontSize: '13px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(253, 170, 93, 0.4)',
-                }}
-              >
-                Add to Cart
-              </button>
+              {selectedProduct.stock <= 0 ? (
+                <button
+                  disabled
+                  style={{
+                    backgroundColor: '#E2E8F0',
+                    color: '#64748B',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '12px 20px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    cursor: 'not-allowed',
+                  }}
+                >
+                  Out of stock
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    const inCart = cart[selectedProduct.id] || 0;
+                    if (inCart >= selectedProduct.stock) {
+                      showToast(`Only ${selectedProduct.stock} available`, 'warning');
+                      return;
+                    }
+                    handleQtyChange(selectedProduct.id, inCart + 1);
+                    setSelectedProduct(null);
+                    setIsCartOpen(true);
+                  }}
+                  style={{
+                    backgroundColor: '#FDAA5D',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '12px 20px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(253, 170, 93, 0.4)',
+                  }}
+                >
+                  Add to Cart
+                </button>
+              )}
             </div>
+
+            <SimilarProducts product={selectedProduct} all={products} onOpen={(p) => setSelectedProduct(p)} />
           </div>
         )}
       </BottomSheet>

@@ -48,6 +48,7 @@ import {
   getCategoryEmoji,
 } from '@lucky/shared';
 import { UpiPaymentSheet } from './UpiPaymentSheet';
+import { FilterBar, applyFilters, DEFAULT_FILTERS, type CatalogFilters } from './Filters';
 import { LaunchGate, OfflineBanner } from './Launch';
 
 const SEED_DRINKS: Product[] = [
@@ -209,7 +210,6 @@ const DEFAULT_CATEGORY_ITEMS = [
 
 const CATEGORY_COLORS = ['#4AB7B6', '#4B90E2', '#E056A0', '#9B51E0', '#E67E22', '#27AE60', '#FDAA5D', '#EF4444'];
 
-type SortOption = 'popular' | 'price_asc' | 'price_desc' | 'abv';
 
 function HyperMartStorefront() {
   const { showToast } = useToast();
@@ -218,7 +218,7 @@ function HyperMartStorefront() {
   // Categories come live from the admin app; the built-in list is the fallback
   const [categoryItems, setCategoryItems] = useState(DEFAULT_CATEGORY_ITEMS);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('popular');
+  const [filters, setFilters] = useState<CatalogFilters>(DEFAULT_FILTERS);
   const [products, setProducts] = useState<Product[]>(SEED_DRINKS);
   const [myOrders, setMyOrders] = useState<Order[]>([]);
   
@@ -320,9 +320,8 @@ function HyperMartStorefront() {
   // Live Realtime Database Subscriptions (Instantly syncs edits from Admin)
   useEffect(() => {
     const unsubProds = subscribeToProducts((liveProds) => {
-      if (liveProds && liveProds.length > 0) {
-        setProducts(liveProds);
-      }
+      // Hidden products never reach customers; an empty list from the database is real (not a reason to keep demo data)
+      setProducts((liveProds ?? []).filter((p) => p.visible !== false));
     });
 
     const unsubSettings = subscribeToStoreSettings((liveSettings) => {
@@ -399,6 +398,27 @@ function HyperMartStorefront() {
   const deliveryFee = cartSubtotal >= storeSettings.freeDeliveryAbove || cartSubtotal === 0 ? 0 : storeSettings.deliveryFee;
   const cartGrandTotal = cartSubtotal + deliveryFee;
 
+  // Puts the items of a past order back in the cart using TODAY's catalog (price, stock and visibility may have changed)
+  const handleReorder = (ord: Order) => {
+    const next: Record<string, number> = {};
+    let skipped = 0;
+    for (const it of ord.items) {
+      const live = products.find((p) => p.id === it.productId);
+      if (!live || live.stock <= 0) {
+        skipped += 1;
+        continue;
+      }
+      next[live.id] = Math.min(it.quantity, live.stock);
+    }
+    if (Object.keys(next).length === 0) {
+      showToast('These items are not available right now.', 'warning');
+      return;
+    }
+    setCart(next);
+    setIsCartOpen(true);
+    showToast(skipped ? `Cart ready. ${skipped} item${skipped === 1 ? ' is' : 's are'} unavailable now.` : 'Items added to your cart', skipped ? 'warning' : 'success');
+  };
+
   const handleQtyChange = (productId: string, qty: number) => {
     setCart((prev) => {
       const copy = { ...prev };
@@ -413,22 +433,20 @@ function HyperMartStorefront() {
     });
   };
 
-  const filteredProducts = products.filter((p) => {
-    const matchCat = selectedCategory === 'all' || p.categoryId === selectedCategory;
-    const query = searchQuery.trim().toLowerCase();
-    const matchSearch =
-      query === '' ||
-      p.name.toLowerCase().includes(query) ||
-      p.brand.toLowerCase().includes(query) ||
-      (p.tags && p.tags.some((t) => t.toLowerCase().includes(query))) ||
-      p.description.toLowerCase().includes(query);
-    return matchCat && matchSearch;
-  }).sort((a, b) => {
-    if (sortBy === 'price_asc') return a.price - b.price;
-    if (sortBy === 'price_desc') return b.price - a.price;
-    if (sortBy === 'abv') return (b.abv || 0) - (a.abv || 0);
-    return (b.featured ? 1 : 0) - (a.featured ? 1 : 0);
-  });
+  const filteredProducts = applyFilters(
+    products.filter((p) => {
+      const matchCat = selectedCategory === 'all' || p.categoryId === selectedCategory;
+      const query = searchQuery.trim().toLowerCase();
+      const matchSearch =
+        query === '' ||
+        p.name.toLowerCase().includes(query) ||
+        p.brand.toLowerCase().includes(query) ||
+        (p.tags && p.tags.some((t) => t.toLowerCase().includes(query))) ||
+        p.description.toLowerCase().includes(query);
+      return matchCat && matchSearch;
+    }),
+    filters
+  );
 
   const handlePlaceOrder = async () => {
     if (isSubmittingOrder) return;
@@ -1374,6 +1392,8 @@ function HyperMartStorefront() {
             Explore Drinks ({products.length})
           </h2>
 
+          <FilterBar products={products} filters={filters} onChange={setFilters} />
+
           <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: '4px' }}>
             <button
               onClick={() => setSelectedCategory('all')}
@@ -1491,6 +1511,22 @@ function HyperMartStorefront() {
                     <span style={{ fontSize: '15px', fontWeight: 800, color: '#1E293B' }}>
                       ₹{ord.total.toLocaleString('en-IN')}
                     </span>
+
+                    <button
+                      onClick={() => handleReorder(ord)}
+                      style={{
+                        backgroundColor: '#FFFFFF',
+                        color: '#2C7372',
+                        border: '1.5px solid #4AB7B6',
+                        borderRadius: '10px',
+                        padding: '5px 12px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Reorder
+                    </button>
 
                     <button
                       onClick={() => {

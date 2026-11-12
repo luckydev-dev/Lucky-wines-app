@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { App as CapApp } from '@capacitor/app';
 import {
   ToastProvider,
   useToast,
@@ -15,10 +16,12 @@ import {
   subscribeToProducts,
   subscribeToStoreSettings,
   subscribeToBanners,
+  subscribeToCategories,
   createOrderInRTDB,
   subscribeToSingleOrder,
   subscribeToMyOrders,
   ensureCustomerAuth,
+  cancelMyOrder,
   IconMapPin,
   IconSearch,
   IconBell,
@@ -44,6 +47,8 @@ import {
   AnimatedSparkle,
   getCategoryEmoji,
 } from '@lucky/shared';
+import { UpiPaymentSheet } from './UpiPaymentSheet';
+import { LaunchGate, OfflineBanner } from './Launch';
 
 const SEED_DRINKS: Product[] = [
   {
@@ -192,7 +197,7 @@ const SEED_DRINKS: Product[] = [
   },
 ];
 
-const CATEGORY_ITEMS = [
+const DEFAULT_CATEGORY_ITEMS = [
   { id: 'cat_whiskey', name: 'Spirits', code: 'WH', color: '#4AB7B6' },
   { id: 'cat_beer', name: 'Beers', code: 'BR', color: '#4B90E2' },
   { id: 'cat_wine', name: 'Wines', code: 'WN', color: '#E056A0' },
@@ -202,12 +207,16 @@ const CATEGORY_ITEMS = [
   { id: 'cat_mixers', name: 'Mixers', code: 'MX', color: '#FDAA5D' },
 ];
 
+const CATEGORY_COLORS = ['#4AB7B6', '#4B90E2', '#E056A0', '#9B51E0', '#E67E22', '#27AE60', '#FDAA5D', '#EF4444'];
+
 type SortOption = 'popular' | 'price_asc' | 'price_desc' | 'abv';
 
 function HyperMartStorefront() {
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<NavTabId>('home');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  // Categories come live from the admin app; the built-in list is the fallback
+  const [categoryItems, setCategoryItems] = useState(DEFAULT_CATEGORY_ITEMS);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('popular');
   const [products, setProducts] = useState<Product[]>(SEED_DRINKS);
@@ -251,13 +260,62 @@ function HyperMartStorefront() {
   const [pincode, setPincode] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'cod'>('upi');
-  const [utrNumber, setUtrNumber] = useState('');
+  const [paymentOrder, setPaymentOrder] = useState<Order | null>(null);
   const [ageConsent, setAgeConsent] = useState(false);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
 
   // Active Tracked Order
   const [activeTrackingOrderId, setActiveTrackingOrderId] = useState<string | null>(null);
   const [trackedOrder, setTrackedOrder] = useState<Order | null>(null);
+
+  // Android back button: close the topmost screen first, go Home next, and only then leave the app.
+  const backHandlerRef = useRef<() => boolean>(() => false);
+  backHandlerRef.current = () => {
+    if (paymentOrder) {
+      setActiveTrackingOrderId(paymentOrder.id);
+      setPaymentOrder(null);
+      return true;
+    }
+    if (activeTrackingOrderId) {
+      setActiveTrackingOrderId(null);
+      return true;
+    }
+    if (isCheckoutOpen) {
+      setIsCheckoutOpen(false);
+      return true;
+    }
+    if (selectedProduct) {
+      setSelectedProduct(null);
+      return true;
+    }
+    if (isCartOpen) {
+      setIsCartOpen(false);
+      return true;
+    }
+    if (activeTab !== 'home') {
+      setActiveTab('home');
+      return true;
+    }
+    return false;
+  };
+  useEffect(() => {
+    let handle: { remove: () => Promise<void> } | undefined;
+    let disposed = false;
+    CapApp.addListener('backButton', () => {
+      if (!backHandlerRef.current()) {
+        CapApp.exitApp().catch(() => {});
+      }
+    })
+      .then((h) => {
+        if (disposed) h.remove();
+        else handle = h;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      handle?.remove().catch(() => {});
+    };
+  }, []);
 
   // Live Realtime Database Subscriptions (Instantly syncs edits from Admin)
   useEffect(() => {
@@ -271,6 +329,19 @@ function HyperMartStorefront() {
       if (liveSettings) {
         setStoreSettings(liveSettings);
       }
+    });
+
+    const unsubCategories = subscribeToCategories((cats) => {
+      const visible = cats.filter((c) => c.visible !== false);
+      if (visible.length === 0) return;
+      setCategoryItems(
+        visible.map((c, i) => ({
+          id: c.id,
+          name: c.name,
+          code: c.name.slice(0, 2).toUpperCase(),
+          color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+        }))
+      );
     });
 
     const unsubBanners = subscribeToBanners((banners) => {
@@ -290,6 +361,7 @@ function HyperMartStorefront() {
       unsubProds();
       unsubSettings();
       unsubBanners();
+      unsubCategories();
     };
   }, []);
 
@@ -400,11 +472,6 @@ function HyperMartStorefront() {
       showToast('Please enter a valid phone number', 'warning');
       return;
     }
-    const utr = utrNumber.trim();
-    if (paymentMethod === 'upi' && !/^[0-9]{12}$/.test(utr)) {
-      showToast('Please enter your 12-digit UPI UTR number', 'warning');
-      return;
-    }
 
     const orderItems = Object.entries(cart).flatMap(([pId, qty]) => {
       const item = products.find((x) => x.id === pId);
@@ -446,7 +513,6 @@ function HyperMartStorefront() {
       total: cartGrandTotal,
       paymentMethod: paymentMethod,
       paymentStatus: paymentMethod === 'upi' ? 'awaiting_verification' : 'pending',
-      ...(paymentMethod === 'upi' ? { utr } : {}),
       status: 'placed',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -457,9 +523,15 @@ function HyperMartStorefront() {
       setCart({});
       setIsCheckoutOpen(false);
       setIsCartOpen(false);
-      setActiveTrackingOrderId(orderId);
-      setTrackedOrder(newOrder);
-      showToast(`Order #${orderId} placed successfully!`, 'success');
+      setTrackedOrder({ ...newOrder, userId: newOrder.userId });
+      if (paymentMethod === 'upi') {
+        // Order is already saved (awaiting verification) - now let the customer pay
+        setPaymentOrder({ ...newOrder });
+        showToast(`Order #${orderId} saved. Complete your UPI payment.`, 'success');
+      } else {
+        setActiveTrackingOrderId(orderId);
+        showToast(`Order #${orderId} placed successfully!`, 'success');
+      }
     } catch (err) {
       // Never tell the customer the order is placed when it was not saved.
       console.error('Order placement failed:', err);
@@ -759,66 +831,19 @@ function HyperMartStorefront() {
               </div>
             </div>
 
-            {/* UPI Instructions Box */}
+            {/* UPI info - the actual payment happens right after the order is saved */}
             {paymentMethod === 'upi' && (
               <div style={{
                 backgroundColor: '#F8FAFC',
                 borderRadius: '12px',
                 border: '1.5px dashed #4AB7B6',
                 padding: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
+                fontSize: '11px',
+                color: '#475569',
+                lineHeight: 1.5,
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>
-                    Pay to Store UPI:
-                  </span>
-                  <div
-                    onClick={() => {
-                      navigator.clipboard?.writeText(storeSettings.upiId);
-                      showToast(`UPI ID copied: ${storeSettings.upiId}`, 'success');
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      backgroundColor: '#E8F5F5',
-                      color: '#2C7372',
-                      padding: '4px 10px',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <span>{storeSettings.upiId}</span>
-                    <IconCopy size={14} color="#2C7372" />
-                  </div>
-                </div>
-
-                <div style={{ fontSize: '11px', color: '#64748B' }}>
-                  Transfer <strong>₹{cartGrandTotal.toLocaleString('en-IN')}</strong> then enter the 12-digit UTR reference ID:
-                </div>
-
-                <input
-                  type="text"
-                  maxLength={16}
-                  placeholder="Enter 12-digit UTR / Ref ID"
-                  value={utrNumber}
-                  onChange={(e) => setUtrNumber(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
-                    fontSize: '13px',
-                    color: '#1E293B',
-                    fontFamily: 'monospace',
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                  }}
-                />
+                After you tap <strong>Place Order</strong> you can pay <strong>₹{cartGrandTotal.toLocaleString('en-IN')}</strong> with
+                Google Pay, PhonePe, Paytm or any UPI app - or scan a QR code. The store confirms your payment before packing.
               </div>
             )}
           </div>
@@ -1256,7 +1281,7 @@ function HyperMartStorefront() {
                 </span>
               </div>
 
-              {CATEGORY_ITEMS.map((cat) => {
+              {categoryItems.map((cat) => {
                 const isSelected = selectedCategory === cat.id;
                 return (
                   <div
@@ -1316,7 +1341,7 @@ function HyperMartStorefront() {
               }}>
                 {selectedCategory === 'all'
                   ? 'Popular Deals'
-                  : `${CATEGORY_ITEMS.find((c) => c.id === selectedCategory)?.name || 'Filtered'} (${filteredProducts.length})`}
+                  : `${categoryItems.find((c) => c.id === selectedCategory)?.name || 'Filtered'} (${filteredProducts.length})`}
               </h3>
               <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 600 }}>
                 {filteredProducts.length} items
@@ -1365,7 +1390,7 @@ function HyperMartStorefront() {
             >
               All Bottles
             </button>
-            {CATEGORY_ITEMS.map((c) => (
+            {categoryItems.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setSelectedCategory(c.id)}
@@ -1905,42 +1930,100 @@ function HyperMartStorefront() {
               </div>
             </div>
 
+            {/* Payment */}
             <div style={{
               backgroundColor: '#F8FAFC',
               borderRadius: '14px',
               padding: '12px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
               border: '1px solid #E2E8F0',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <AnimatedTruck size={22} color="#4AB7B6" />
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#1E293B' }}>Suresh Kumar</div>
-                  <div style={{ fontSize: '11px', color: '#64748B' }}>Lucky Express Partner</div>
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                <span style={{ color: '#64748B' }}>Payment</span>
+                <span style={{ fontWeight: 800, color: '#1E293B' }}>
+                  {trackedOrder.paymentMethod === 'cod' ? 'Cash on Delivery' : 'UPI'} · ₹{trackedOrder.total.toLocaleString('en-IN')}
+                </span>
               </div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color:
+                trackedOrder.paymentStatus === 'paid' ? '#10B981' :
+                trackedOrder.paymentStatus === 'failed' ? '#EF4444' : '#B45309' }}>
+                {trackedOrder.paymentStatus === 'paid' && 'Payment received'}
+                {trackedOrder.paymentStatus === 'pending' && 'Pay the delivery partner on delivery'}
+                {trackedOrder.paymentStatus === 'awaiting_verification' && 'Payment not completed yet'}
+                {trackedOrder.paymentStatus === 'payment_submitted' && 'Waiting for the store to verify your payment'}
+                {trackedOrder.paymentStatus === 'failed' && 'The store could not find your payment'}
+              </div>
+              {trackedOrder.paymentMethod === 'upi' &&
+                (trackedOrder.paymentStatus === 'awaiting_verification' || trackedOrder.paymentStatus === 'failed') &&
+                trackedOrder.status !== 'cancelled' && (
+                <button
+                  onClick={() => setPaymentOrder(trackedOrder)}
+                  style={{
+                    padding: '10px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    backgroundColor: '#4AB7B6',
+                    color: '#FFFFFF',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {trackedOrder.paymentStatus === 'failed' ? 'Pay again' : 'Complete payment'}
+                </button>
+              )}
+            </div>
 
+            {storeSettings.phone && (
               <a
-                href="tel:+919876543210"
+                href={`tel:${storeSettings.phone.replace(/[^+0-9]/g, '')}`}
                 style={{
                   backgroundColor: '#4AB7B6',
                   color: '#FFFFFF',
-                  borderRadius: '10px',
-                  padding: '6px 14px',
-                  fontSize: '12px',
+                  borderRadius: '12px',
+                  padding: '11px',
+                  fontSize: '13px',
                   fontWeight: 700,
                   textDecoration: 'none',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px',
+                  justifyContent: 'center',
+                  gap: '6px',
                 }}
               >
                 <IconPhone size={14} color="#FFFFFF" />
-                <span>Call</span>
+                <span>Call the store</span>
               </a>
-            </div>
+            )}
+
+            {trackedOrder.status === 'placed' && (
+              <button
+                onClick={async () => {
+                  try {
+                    await cancelMyOrder(trackedOrder.id);
+                    showToast('Order cancelled', 'info');
+                  } catch (err) {
+                    console.error('Cancel failed:', err);
+                    showToast('Could not cancel. Please call the store.', 'error');
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '11px',
+                  borderRadius: '12px',
+                  backgroundColor: '#FFFFFF',
+                  color: '#B91C1C',
+                  border: '1.5px solid #FECACA',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel order
+              </button>
+            )}
 
             <button
               onClick={() => setActiveTrackingOrderId(null)}
@@ -1961,6 +2044,22 @@ function HyperMartStorefront() {
           </div>
         )}
       </BottomSheet>
+
+      {/* 10. UPI payment (opens right after a UPI order is saved, or from the order tracker) */}
+      <UpiPaymentSheet
+        order={paymentOrder}
+        settings={storeSettings}
+        showToast={showToast}
+        onClose={() => {
+          // Pay later: keep the order and show it in the tracker
+          if (paymentOrder) setActiveTrackingOrderId(paymentOrder.id);
+          setPaymentOrder(null);
+        }}
+        onSubmitted={(orderId) => {
+          setPaymentOrder(null);
+          setActiveTrackingOrderId(orderId);
+        }}
+      />
     </div>
   );
 }
@@ -1969,6 +2068,8 @@ export default function App() {
   return (
     <ToastProvider>
       <HyperMartStorefront />
+      <OfflineBanner />
+      <LaunchGate />
     </ToastProvider>
   );
 }

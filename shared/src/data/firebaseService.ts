@@ -205,6 +205,30 @@ export async function fetchCategoriesList(): Promise<Category[]> {
   ];
 }
 
+export function subscribeToCategories(onUpdate: (categories: Category[]) => void): () => void {
+  try {
+    return onValue(
+      ref(getRTDB(), 'categories'),
+      (snap) => {
+        const list: Category[] = snap.exists() ? Object.values(snap.val()) : [];
+        onUpdate(list.sort((a, b) => a.order - b.order));
+      },
+      () => {}
+    );
+  } catch (err) {
+    console.warn('Categories subscription fallback:', err);
+    return () => {};
+  }
+}
+
+export async function saveCategoryInRTDB(category: Category): Promise<void> {
+  await set(ref(getRTDB(), `categories/${category.id}`), category);
+}
+
+export async function deleteCategoryFromRTDB(categoryId: string): Promise<void> {
+  await remove(ref(getRTDB(), `categories/${categoryId}`));
+}
+
 export function subscribeToOrders(onUpdate: (orders: Order[]) => void): () => void {
   try {
     const db = getRTDB();
@@ -320,6 +344,88 @@ export async function updateOrderPaymentStatusInRTDB(orderId: string, paymentSta
     paymentStatus,
     updatedAt: Date.now(),
   });
+}
+
+/**
+ * Customer taps "I have paid" after paying by UPI. This only records that the customer says they paid
+ * (paymentStatus = payment_submitted); the shop owner verifies it in the admin app.
+ * Uses a root multi-path update so each field is checked against its own database rule.
+ */
+export async function submitUpiPayment(orderId: string, utr?: string): Promise<void> {
+  await ensureCustomerAuth();
+  const updates: Record<string, unknown> = {
+    [`orders/${orderId}/paymentStatus`]: 'payment_submitted',
+    [`orders/${orderId}/updatedAt`]: Date.now(),
+  };
+  const cleanUtr = utr?.trim();
+  if (cleanUtr) updates[`orders/${orderId}/utr`] = cleanUtr;
+  await update(ref(getRTDB()), updates);
+}
+
+/** Customer cancels their own order. The database only allows this while the order is still "placed". */
+export async function cancelMyOrder(orderId: string): Promise<void> {
+  await ensureCustomerAuth();
+  await update(ref(getRTDB()), {
+    [`orders/${orderId}/status`]: 'cancelled',
+    [`orders/${orderId}/updatedAt`]: Date.now(),
+  });
+}
+
+// -------------------------------------------------------------
+// ADMIN DEVICES (which phones get new-order alerts)
+// -------------------------------------------------------------
+
+export interface AdminDeviceEntry {
+  id: string;
+  fcmToken?: string;
+  deviceName: string;
+  platform: string;
+  lastSeen: number;
+}
+
+/** Saves/refreshes this phone under admins/{uid}/devices/{deviceId}. */
+export async function registerAdminDevice(
+  deviceId: string,
+  info: { deviceName: string; platform: string; fcmToken?: string }
+): Promise<void> {
+  const uid = getFirebaseAuth().currentUser?.uid;
+  if (!uid) throw new Error('NOT_SIGNED_IN');
+  const data: Record<string, unknown> = {
+    deviceName: info.deviceName,
+    platform: info.platform,
+    lastSeen: Date.now(),
+  };
+  if (info.fcmToken) data.fcmToken = info.fcmToken;
+  await update(ref(getRTDB(), `admins/${uid}/devices/${deviceId}`), data);
+}
+
+export async function removeAdminDevice(deviceId: string): Promise<void> {
+  const uid = getFirebaseAuth().currentUser?.uid;
+  if (!uid) return;
+  await remove(ref(getRTDB(), `admins/${uid}/devices/${deviceId}`));
+}
+
+export function subscribeToAdminDevices(onUpdate: (devices: AdminDeviceEntry[]) => void): () => void {
+  const uid = getFirebaseAuth().currentUser?.uid;
+  if (!uid) {
+    onUpdate([]);
+    return () => {};
+  }
+  return onValue(
+    ref(getRTDB(), `admins/${uid}/devices`),
+    (snap) => {
+      const val = snap.exists() ? (snap.val() as Record<string, Omit<AdminDeviceEntry, 'id'>>) : {};
+      onUpdate(Object.entries(val).map(([id, d]) => ({ id, ...d })).sort((a, b) => b.lastSeen - a.lastSeen));
+    },
+    () => onUpdate([])
+  );
+}
+
+/** Fires with false when this device's entry has been removed (so the app can sign out). */
+export function subscribeToMyDevice(deviceId: string, onExists: (exists: boolean) => void): () => void {
+  const uid = getFirebaseAuth().currentUser?.uid;
+  if (!uid) return () => {};
+  return onValue(ref(getRTDB(), `admins/${uid}/devices/${deviceId}`), (snap) => onExists(snap.exists()), () => {});
 }
 
 export async function seedRealtimeDatabase(seedData: any): Promise<boolean> {

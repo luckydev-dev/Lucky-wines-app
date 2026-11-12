@@ -9,6 +9,7 @@ import {
   StoreSettings,
   Banner,
   subscribeToOrders,
+  subscribeToCategories,
   updateOrderStatusInRTDB,
   updateOrderPaymentStatusInRTDB,
   subscribeToProducts,
@@ -19,6 +20,7 @@ import {
   addProductToRTDB,
   deleteProductFromRTDB,
   fetchStoreSettings,
+  isValidUpiId,
   updateStoreSettingsInRTDB,
   subscribeToBanners,
   updateBannerInRTDB,
@@ -41,6 +43,10 @@ import {
   AnimatedSparkle,
 } from '@lucky/shared';
 
+import { OrderAlerts, MyDevices } from './DeviceAlerts';
+import { CategoriesManager, CustomersList } from './Manage';
+import { unregisterThisDevice } from './alerts';
+
 type AdminNavTab = 'orders' | 'products' | 'analytics' | 'settings';
 
 function HyperMartAdmin() {
@@ -48,7 +54,9 @@ function HyperMartAdmin() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [activeTab, setActiveTab] = useState<AdminNavTab>('orders');
+  const [categoryOptions, setCategoryOptions] = useState<{ id: string; name: string }[]>([]);
   const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'active' | 'delivered'>('all');
+  const [pincodeText, setPincodeText] = useState('');
   
   // Store Settings & Banners (Editable from Admin)
   const [storeSettings, setStoreSettings] = useState<StoreSettings>({
@@ -107,6 +115,7 @@ function HyperMartAdmin() {
     fetchStoreSettings().then((settings) => {
       if (settings) {
         setStoreSettings(settings);
+        setPincodeText((settings.pincodes ?? []).join(', '));
       }
     });
     const unsubBanners = subscribeToBanners((banners) => {
@@ -121,7 +130,9 @@ function HyperMartAdmin() {
         });
       }
     });
+    const unsubCats = subscribeToCategories((c) => setCategoryOptions(c.map((x) => ({ id: x.id, name: x.name }))));
     return () => {
+      unsubCats();
       unsubProducts();
       unsubBanners();
     };
@@ -153,6 +164,16 @@ function HyperMartAdmin() {
     } catch (err) {
       console.error('UPI verification failed:', err);
       showToast('Could not verify the payment. Check your connection and sign-in.', 'error');
+    }
+  };
+
+  const handlePaymentNotReceived = async (orderId: string) => {
+    try {
+      await updateOrderPaymentStatusInRTDB(orderId, 'failed');
+      showToast(`Marked payment not received for Order #${orderId}. The customer can pay again.`, 'warning');
+    } catch (err) {
+      console.error('Payment status update failed:', err);
+      showToast('Could not update the payment. Check your connection and sign-in.', 'error');
     }
   };
 
@@ -277,8 +298,21 @@ function HyperMartAdmin() {
   };
 
   const handleSaveStoreSettings = async () => {
+    if (storeSettings.upiId.trim() && !isValidUpiId(storeSettings.upiId)) {
+      showToast('That UPI ID does not look right. It should look like name@bank.', 'warning');
+      return;
+    }
+    const pincodes = pincodeText
+      .split(/[\s,]+/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (pincodes.some((p) => !/^[0-9]{6}$/.test(p))) {
+      showToast('Delivery pincodes must be 6 digits each, separated by commas.', 'warning');
+      return;
+    }
     try {
-      await updateStoreSettingsInRTDB(storeSettings);
+      await updateStoreSettingsInRTDB({ ...storeSettings, upiId: storeSettings.upiId.trim(), pincodes });
+      setStoreSettings((cur) => ({ ...cur, pincodes }));
       showToast('Store settings saved', 'success');
     } catch (err) {
       console.error('Settings save failed:', err);
@@ -301,17 +335,47 @@ function HyperMartAdmin() {
     }
   };
 
-  const todayRevenue = orders.reduce((sum, o) => sum + o.total, 0);
-  const pendingOrdersCount = orders.filter(
-    (o) => o.status === 'placed' || o.paymentStatus === 'awaiting_verification'
-  ).length;
+  // An order needs the owner's attention when it is new, or a customer says they paid by UPI
+  const needsAction = (o: Order) =>
+    o.status !== 'cancelled' && (o.status === 'placed' || o.paymentStatus === 'payment_submitted');
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const todaysOrders = orders.filter((o) => o.createdAt >= startOfToday.getTime() && o.status !== 'cancelled');
+  // Sales = today's orders that are not cancelled and whose payment did not fail
+  const todayRevenue = todaysOrders
+    .filter((o) => o.paymentStatus !== 'failed')
+    .reduce((sum, o) => sum + o.total, 0);
+  const pendingOrdersCount = orders.filter(needsAction).length;
+  const upiOrderCount = orders.filter((o) => o.paymentMethod === 'upi' && o.status !== 'cancelled').length;
+  const codOrderCount = orders.filter((o) => o.paymentMethod === 'cod' && o.status !== 'cancelled').length;
+  const paidPercent = (n: number) => {
+    const total = upiOrderCount + codOrderCount;
+    return total > 0 ? Math.round((n / total) * 100) : 0;
+  };
 
   const filteredOrders = orders.filter((o) => {
-    if (orderFilter === 'pending') return o.status === 'placed' || o.paymentStatus === 'awaiting_verification';
+    if (orderFilter === 'pending') return needsAction(o);
     if (orderFilter === 'active') return o.status === 'confirmed' || o.status === 'packed' || o.status === 'out_for_delivery';
     if (orderFilter === 'delivered') return o.status === 'delivered';
     return true;
   });
+
+  // Banner / notification tap: show the Orders tab and scroll to that order
+  const openOrder = (orderId: string) => {
+    setActiveTab('orders');
+    setOrderFilter('all');
+    window.setTimeout(() => {
+      const el = document.getElementById(`order-${orderId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.animate(
+          [{ boxShadow: '0 0 0 3px #4AB7B6' }, { boxShadow: '0 0 0 0 rgba(74,183,182,0)' }],
+          { duration: 1800, easing: 'ease-out' }
+        );
+      }
+    }, 250);
+  };
 
   return (
     <div style={{
@@ -323,6 +387,7 @@ function HyperMartAdmin() {
       paddingBottom: '88px',
       boxSizing: 'border-box',
     }}>
+      <OrderAlerts orders={orders} onOpenOrder={openOrder} />
       {/* 1. Header with Compact Safe Area Padding (Just 10-12px) */}
       <header
         className="app-header-safe"
@@ -362,7 +427,7 @@ function HyperMartAdmin() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <button
-          onClick={() => { void adminSignOut(); }}
+          onClick={async () => { await unregisterThisDevice(); await adminSignOut(); }}
           aria-label="Sign out"
           style={{
             backgroundColor: 'transparent',
@@ -463,6 +528,7 @@ function HyperMartAdmin() {
               filteredOrders.map((order) => (
                 <div
                   key={order.id}
+                  id={`order-${order.id}`}
                   style={{
                     backgroundColor: '#FFFFFF',
                     borderRadius: '18px',
@@ -524,6 +590,12 @@ function HyperMartAdmin() {
                     </a>
                   </div>
 
+                  {order.paymentMethod === 'upi' && order.utr && (
+                    <div style={{ fontSize: '11px', color: '#475569', fontWeight: 600 }}>
+                      Customer UTR: <span style={{ fontFamily: 'monospace', fontWeight: 800 }}>{order.utr}</span>
+                    </div>
+                  )}
+
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -539,7 +611,27 @@ function HyperMartAdmin() {
                     </div>
 
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      {order.paymentStatus === 'awaiting_verification' && (
+                      {order.paymentMethod === 'upi' && order.status !== 'cancelled' && order.paymentStatus === 'payment_submitted' && (
+                        <button
+                          onClick={() => handlePaymentNotReceived(order.id)}
+                          style={{
+                            backgroundColor: '#FFFFFF',
+                            color: '#B91C1C',
+                            border: '1.5px solid #FECACA',
+                            borderRadius: '10px',
+                            padding: '8px 12px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Not received
+                        </button>
+                      )}
+
+                      {order.paymentMethod === 'upi' &&
+                        order.status !== 'cancelled' &&
+                        (order.paymentStatus === 'awaiting_verification' || order.paymentStatus === 'payment_submitted') && (
                         <button
                           onClick={() => handleVerifyUPI(order.id)}
                           style={{
@@ -554,11 +646,11 @@ function HyperMartAdmin() {
                             boxShadow: '0 2px 8px rgba(253, 170, 93, 0.4)',
                           }}
                         >
-                          Verify UPI
+                          Payment received
                         </button>
                       )}
 
-                      {order.status === 'placed' && (
+                      {order.status === 'placed' && (order.paymentMethod === 'cod' || order.paymentStatus === 'paid') && (
                         <button
                           onClick={() => handleStatusChange(order.id, 'confirmed')}
                           style={{
@@ -574,6 +666,26 @@ function HyperMartAdmin() {
                           }}
                         >
                           Confirm
+                        </button>
+                      )}
+
+                      {(order.status === 'placed' || order.status === 'confirmed' || order.status === 'packed') && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Cancel order #${order.id}?`)) handleStatusChange(order.id, 'cancelled');
+                          }}
+                          style={{
+                            backgroundColor: '#FFFFFF',
+                            color: '#64748B',
+                            border: '1.5px solid #E2E8F0',
+                            borderRadius: '10px',
+                            padding: '8px 12px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Cancel
                         </button>
                       )}
 
@@ -785,8 +897,8 @@ function HyperMartAdmin() {
                 <span style={{ fontSize: '17px', fontWeight: 800, color: '#1E293B', fontFamily: "'Poppins', sans-serif" }}>
                   ₹{todayRevenue.toLocaleString('en-IN')}
                 </span>
-                <span style={{ fontSize: '10px', color: '#10B981', fontWeight: 700 }}>
-                  +18% Today
+                <span style={{ fontSize: '10px', color: '#64748B', fontWeight: 700 }}>
+                  {todaysOrders.length} order{todaysOrders.length === 1 ? '' : 's'} today
                 </span>
               </div>
 
@@ -804,10 +916,10 @@ function HyperMartAdmin() {
                   Active Orders
                 </span>
                 <span style={{ fontSize: '17px', fontWeight: 800, color: '#FDAA5D', fontFamily: "'Poppins', sans-serif" }}>
-                  {orders.length}
+                  {orders.filter((o) => o.status !== 'delivered' && o.status !== 'cancelled').length}
                 </span>
                 <span style={{ fontSize: '10px', color: '#64748B' }}>
-                  Live Dispatch
+                  Not delivered yet
                 </span>
               </div>
 
@@ -825,10 +937,10 @@ function HyperMartAdmin() {
                   Avg Order
                 </span>
                 <span style={{ fontSize: '15px', fontWeight: 800, color: '#4AB7B6', fontFamily: "'Poppins', sans-serif" }}>
-                  ₹{orders.length > 0 ? Math.round(todayRevenue / orders.length).toLocaleString('en-IN') : '0'}
+                  ₹{todaysOrders.length > 0 ? Math.round(todayRevenue / todaysOrders.length).toLocaleString('en-IN') : '0'}
                 </span>
-                <span style={{ fontSize: '10px', color: '#10B981', fontWeight: 700 }}>
-                  Healthy
+                <span style={{ fontSize: '10px', color: '#64748B' }}>
+                  Per order today
                 </span>
               </div>
             </div>
@@ -852,9 +964,9 @@ function HyperMartAdmin() {
                   padding: '12px',
                   border: '1px solid #D1EBEB',
                 }}>
-                  <div style={{ fontSize: '11px', color: '#2C7372', fontWeight: 700 }}>Instant UPI</div>
-                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#1E293B', marginTop: '2px' }}>78%</div>
-                  <div style={{ fontSize: '10px', color: '#64748B' }}>Settled instantly</div>
+                  <div style={{ fontSize: '11px', color: '#2C7372', fontWeight: 700 }}>UPI</div>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#1E293B', marginTop: '2px' }}>{paidPercent(upiOrderCount)}%</div>
+                  <div style={{ fontSize: '10px', color: '#64748B' }}>{upiOrderCount} order{upiOrderCount === 1 ? '' : 's'}</div>
                 </div>
 
                 <div style={{
@@ -865,8 +977,8 @@ function HyperMartAdmin() {
                   border: '1px solid #FED7AA',
                 }}>
                   <div style={{ fontSize: '11px', color: '#C2410C', fontWeight: 700 }}>Cash on Delivery</div>
-                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#1E293B', marginTop: '2px' }}>22%</div>
-                  <div style={{ fontSize: '10px', color: '#64748B' }}>Doorstep collected</div>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#1E293B', marginTop: '2px' }}>{paidPercent(codOrderCount)}%</div>
+                  <div style={{ fontSize: '10px', color: '#64748B' }}>{codOrderCount} order{codOrderCount === 1 ? '' : 's'}</div>
                 </div>
               </div>
             </div>
@@ -879,6 +991,18 @@ function HyperMartAdmin() {
             <h3 style={{ fontSize: '16px', fontWeight: 800, margin: 0, color: '#1E293B', fontFamily: "'Poppins', sans-serif" }}>
               Customer App &amp; Store Controls
             </h3>
+
+            <MyDevices showToast={showToast} />
+
+            <CategoriesManager
+              showToast={showToast}
+              productCountByCategory={products.reduce<Record<string, number>>((acc, p) => {
+                acc[p.categoryId] = (acc[p.categoryId] || 0) + 1;
+                return acc;
+              }, {})}
+            />
+
+            <CustomersList orders={orders} />
 
             {/* Section A: Customer App Promo Banner Editor */}
             <div style={{
@@ -1032,6 +1156,59 @@ function HyperMartAdmin() {
                 </div>
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Minimum Order (₹)</label>
+                  <input
+                    type="number"
+                    value={storeSettings.minOrder}
+                    onChange={(e) => setStoreSettings({ ...storeSettings, minOrder: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Order Cut-off Time</label>
+                  <input
+                    type="time"
+                    value={storeSettings.cutoffTime}
+                    onChange={(e) => setStoreSettings({ ...storeSettings, cutoffTime: e.target.value })}
+                    style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Store Phone (customers can call this)</label>
+                <input
+                  type="tel"
+                  value={storeSettings.phone}
+                  onChange={(e) => setStoreSettings({ ...storeSettings, phone: e.target.value })}
+                  style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Delivery Pincodes (comma separated, empty = deliver everywhere)</label>
+                <input
+                  type="text"
+                  value={pincodeText}
+                  onChange={(e) => setPincodeText(e.target.value)}
+                  placeholder="560001, 560002, 560025"
+                  style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Age Notice (shown at first launch - set it to match your local law)</label>
+                <textarea
+                  value={storeSettings.minAgeNotice}
+                  onChange={(e) => setStoreSettings({ ...storeSettings, minAgeNotice: e.target.value })}
+                  rows={3}
+                  maxLength={500}
+                  style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }}
+                />
+              </div>
+
               <button
                 onClick={handleSaveStoreSettings}
                 style={{
@@ -1094,13 +1271,22 @@ function HyperMartAdmin() {
                 onChange={(e) => setProductForm({ ...productForm, categoryId: e.target.value })}
                 style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', backgroundColor: '#FFFFFF', boxSizing: 'border-box' }}
               >
-                <option value="cat_whiskey">Spirits / Whisky</option>
-                <option value="cat_beer">Beer / Lager</option>
-                <option value="cat_wine">Fine Wine</option>
-                <option value="cat_vodka">Vodka</option>
-                <option value="cat_rum">Rum</option>
-                <option value="cat_gin">Gin</option>
-                <option value="cat_mixers">Mixers</option>
+                {(categoryOptions.length > 0
+                  ? categoryOptions
+                  : [
+                      { id: 'cat_whiskey', name: 'Spirits / Whisky' },
+                      { id: 'cat_beer', name: 'Beer / Lager' },
+                      { id: 'cat_wine', name: 'Fine Wine' },
+                      { id: 'cat_vodka', name: 'Vodka' },
+                      { id: 'cat_rum', name: 'Rum' },
+                      { id: 'cat_gin', name: 'Gin' },
+                      { id: 'cat_mixers', name: 'Mixers' },
+                    ]
+                ).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

@@ -1,5 +1,9 @@
 apply plugin: 'com.android.application'
 
+// Version comes from -PappVersionCode / -PappVersionName (workflow); defaults are for local builds
+def appVersionCodeValue = Integer.parseInt((project.findProperty('appVersionCode') ?: '3').toString())
+def appVersionNameValue = (project.findProperty('appVersionName') ?: '1.0.2').toString()
+
 def keystorePropsFile = rootProject.file("../../keystores/keystore.properties")
 def keystoreProps = new Properties()
 if (keystorePropsFile.canRead()) {
@@ -14,8 +18,8 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // Passed in by scripts/build-and-upload.sh and the GitHub workflow so every build is installable as an update
-        versionCode (project.findProperty('appVersionCode') ?: '3').toInteger()
-        versionName (project.findProperty('appVersionName') ?: '1.0.2')
+        versionCode appVersionCodeValue
+        versionName appVersionNameValue
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'

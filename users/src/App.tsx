@@ -16,6 +16,7 @@ import {
   subscribeToProducts,
   subscribeToStoreSettings,
   subscribeToBanners,
+  subscribeToCategories,
   createOrderInRTDB,
   subscribeToSingleOrder,
   subscribeToMyOrders,
@@ -196,7 +197,7 @@ const SEED_DRINKS: Product[] = [
   },
 ];
 
-const CATEGORY_ITEMS = [
+const DEFAULT_CATEGORY_ITEMS = [
   { id: 'cat_whiskey', name: 'Spirits', code: 'WH', color: '#4AB7B6' },
   { id: 'cat_beer', name: 'Beers', code: 'BR', color: '#4B90E2' },
   { id: 'cat_wine', name: 'Wines', code: 'WN', color: '#E056A0' },
@@ -206,12 +207,16 @@ const CATEGORY_ITEMS = [
   { id: 'cat_mixers', name: 'Mixers', code: 'MX', color: '#FDAA5D' },
 ];
 
+const CATEGORY_COLORS = ['#4AB7B6', '#4B90E2', '#E056A0', '#9B51E0', '#E67E22', '#27AE60', '#FDAA5D', '#EF4444'];
+
 type SortOption = 'popular' | 'price_asc' | 'price_desc' | 'abv';
 
 function HyperMartStorefront() {
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<NavTabId>('home');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  // Categories come live from the admin app; the built-in list is the fallback
+  const [categoryItems, setCategoryItems] = useState(DEFAULT_CATEGORY_ITEMS);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('popular');
   const [products, setProducts] = useState<Product[]>(SEED_DRINKS);
@@ -326,6 +331,19 @@ function HyperMartStorefront() {
       }
     });
 
+    const unsubCategories = subscribeToCategories((cats) => {
+      const visible = cats.filter((c) => c.visible !== false);
+      if (visible.length === 0) return;
+      setCategoryItems(
+        visible.map((c, i) => ({
+          id: c.id,
+          name: c.name,
+          code: c.name.slice(0, 2).toUpperCase(),
+          color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+        }))
+      );
+    });
+
     const unsubBanners = subscribeToBanners((banners) => {
       if (banners && banners.length > 0) {
         const b = banners[0];
@@ -343,6 +361,7 @@ function HyperMartStorefront() {
       unsubProds();
       unsubSettings();
       unsubBanners();
+      unsubCategories();
     };
   }, []);
 
@@ -1262,7 +1281,7 @@ function HyperMartStorefront() {
                 </span>
               </div>
 
-              {CATEGORY_ITEMS.map((cat) => {
+              {categoryItems.map((cat) => {
                 const isSelected = selectedCategory === cat.id;
                 return (
                   <div
@@ -1322,7 +1341,7 @@ function HyperMartStorefront() {
               }}>
                 {selectedCategory === 'all'
                   ? 'Popular Deals'
-                  : `${CATEGORY_ITEMS.find((c) => c.id === selectedCategory)?.name || 'Filtered'} (${filteredProducts.length})`}
+                  : `${categoryItems.find((c) => c.id === selectedCategory)?.name || 'Filtered'} (${filteredProducts.length})`}
               </h3>
               <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 600 }}>
                 {filteredProducts.length} items
@@ -1371,7 +1390,7 @@ function HyperMartStorefront() {
             >
               All Bottles
             </button>
-            {CATEGORY_ITEMS.map((c) => (
+            {categoryItems.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setSelectedCategory(c.id)}

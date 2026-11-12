@@ -9,6 +9,7 @@ import {
   StoreSettings,
   Banner,
   subscribeToOrders,
+  subscribeToCategories,
   updateOrderStatusInRTDB,
   updateOrderPaymentStatusInRTDB,
   subscribeToProducts,
@@ -43,6 +44,7 @@ import {
 } from '@lucky/shared';
 
 import { OrderAlerts, MyDevices } from './DeviceAlerts';
+import { CategoriesManager, CustomersList } from './Manage';
 import { unregisterThisDevice } from './alerts';
 
 type AdminNavTab = 'orders' | 'products' | 'analytics' | 'settings';
@@ -52,6 +54,7 @@ function HyperMartAdmin() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [activeTab, setActiveTab] = useState<AdminNavTab>('orders');
+  const [categoryOptions, setCategoryOptions] = useState<{ id: string; name: string }[]>([]);
   const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'active' | 'delivered'>('all');
   const [pincodeText, setPincodeText] = useState('');
   
@@ -127,7 +130,9 @@ function HyperMartAdmin() {
         });
       }
     });
+    const unsubCats = subscribeToCategories((c) => setCategoryOptions(c.map((x) => ({ id: x.id, name: x.name }))));
     return () => {
+      unsubCats();
       unsubProducts();
       unsubBanners();
     };
@@ -989,6 +994,16 @@ function HyperMartAdmin() {
 
             <MyDevices showToast={showToast} />
 
+            <CategoriesManager
+              showToast={showToast}
+              productCountByCategory={products.reduce<Record<string, number>>((acc, p) => {
+                acc[p.categoryId] = (acc[p.categoryId] || 0) + 1;
+                return acc;
+              }, {})}
+            />
+
+            <CustomersList orders={orders} />
+
             {/* Section A: Customer App Promo Banner Editor */}
             <div style={{
               backgroundColor: '#FFFFFF',
@@ -1256,13 +1271,22 @@ function HyperMartAdmin() {
                 onChange={(e) => setProductForm({ ...productForm, categoryId: e.target.value })}
                 style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '13px', backgroundColor: '#FFFFFF', boxSizing: 'border-box' }}
               >
-                <option value="cat_whiskey">Spirits / Whisky</option>
-                <option value="cat_beer">Beer / Lager</option>
-                <option value="cat_wine">Fine Wine</option>
-                <option value="cat_vodka">Vodka</option>
-                <option value="cat_rum">Rum</option>
-                <option value="cat_gin">Gin</option>
-                <option value="cat_mixers">Mixers</option>
+                {(categoryOptions.length > 0
+                  ? categoryOptions
+                  : [
+                      { id: 'cat_whiskey', name: 'Spirits / Whisky' },
+                      { id: 'cat_beer', name: 'Beer / Lager' },
+                      { id: 'cat_wine', name: 'Fine Wine' },
+                      { id: 'cat_vodka', name: 'Vodka' },
+                      { id: 'cat_rum', name: 'Rum' },
+                      { id: 'cat_gin', name: 'Gin' },
+                      { id: 'cat_mixers', name: 'Mixers' },
+                    ]
+                ).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

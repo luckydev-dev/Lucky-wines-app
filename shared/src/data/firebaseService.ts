@@ -205,6 +205,30 @@ export async function fetchCategoriesList(): Promise<Category[]> {
   ];
 }
 
+export function subscribeToCategories(onUpdate: (categories: Category[]) => void): () => void {
+  try {
+    return onValue(
+      ref(getRTDB(), 'categories'),
+      (snap) => {
+        const list: Category[] = snap.exists() ? Object.values(snap.val()) : [];
+        onUpdate(list.sort((a, b) => a.order - b.order));
+      },
+      () => {}
+    );
+  } catch (err) {
+    console.warn('Categories subscription fallback:', err);
+    return () => {};
+  }
+}
+
+export async function saveCategoryInRTDB(category: Category): Promise<void> {
+  await set(ref(getRTDB(), `categories/${category.id}`), category);
+}
+
+export async function deleteCategoryFromRTDB(categoryId: string): Promise<void> {
+  await remove(ref(getRTDB(), `categories/${categoryId}`));
+}
+
 export function subscribeToOrders(onUpdate: (orders: Order[]) => void): () => void {
   try {
     const db = getRTDB();
